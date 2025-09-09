@@ -8,7 +8,7 @@ The service does not provide for the usual registration with a username and pass
 
 If the load is small, the service will install cookies without the active participation of the user. Otherwise, he will offer to solve the captcha.
 
-For security reasons, HttpOnly captcha is used, which is inaccessible from the JS context.
+For security reasons, HttpOnly cookie is used, which is inaccessible from the JS context.
 
 ### Identification request
 
