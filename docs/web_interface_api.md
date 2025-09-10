@@ -99,7 +99,8 @@ In the case where the response code is 401, it is necessary to display the captc
   "client_id": "Ef1rei8YGRDhdld2NNnSTEpG",
   "captcha_lifetime": 180,
   "captcha_token": "some loooong string",
-  "captcha_image": "base64 encoded PNG"
+  "captcha_image": "base64 encoded PNG",
+  "captcha_answer_length": 5
 }
 ```
 
@@ -190,10 +191,10 @@ Immediately after connection, the server sends the information necessary to init
 {
   "event": "start_init",
   {
-    "session_id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME=",
+    "session_id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME",
     "transferred": {
       "to_receivers": 0,
-      "from_you": 0
+      "from_sender": 0
     },
     "state": {
       "expiration_in": 7200,
@@ -207,7 +208,7 @@ Immediately after connection, the server sends the information necessary to init
       "sender": {
         "is_online": false,
         "name": "Data miner",
-        "id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME="
+        "id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME"
       },
       "receivers": []
     },
@@ -221,12 +222,12 @@ Immediately after connection, the server sends the information necessary to init
 }
 ```
 
-The summary object is shared by all users (for the sender and recipient) with one exception: `transferred` is shared only with the sender.
+The summary object is shared by all users (for the sender and recipient).
 
 **Detailed description of fields**:
 
 - `session_id` - Session ID (identical to the creator's public ID);
-- `transferred` - The amount of data transferred in bytes (displayed only to the session creator).
+- `transferred` - The amount of data transferred in bytes.
 - `state` - Global session status
   - `expiration_in` - The number of seconds remaining before the session is deleted due to reaching the maximum lifetime (timeout); 
   - `some_chunk_was_removed` - Whether at least one chunk was deleted. If true, new users cannot join such a session because some of the data is lost;
