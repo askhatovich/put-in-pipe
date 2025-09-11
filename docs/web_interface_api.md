@@ -177,7 +177,7 @@ If successful, you need to establish a websocket connection.
 
 ## WebSocket connection
 
-All websocket text messages contain JSON, which must have an "event" field.
+All websocket text messages contain JSON. Server messages must be processed using the `event` field, and all incoming messages from the client must contain the `action` key.
 
 ```
 /api/ws
