@@ -193,10 +193,17 @@ Immediately after connection, the server sends the information necessary to init
   {
     "session_id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME",
     "transferred": {
-      "to_receivers": 0,
-      "from_sender": 0
+      "global": {
+        "to_receivers": 0,
+        "from_sender": 0
+      },
+      "received_by_you": 0
     },
     "state": {
+      "file": {
+        "name": "",
+        "size": 0
+      }
       "expiration_in": 7200,
       "some_chunk_was_removed": false,
       "chunk_queue": 0,
@@ -223,6 +230,8 @@ Immediately after connection, the server sends the information necessary to init
 ```
 
 The summary object is shared by all users (for the sender and recipient).
+
+If `.state.file` has an empty name and zero size, this is a sure sign that the file data has not yet been installed.
 
 **Detailed description of fields**:
 
