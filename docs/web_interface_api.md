@@ -2,6 +2,8 @@
 
 Put-In-Pipe documentation for front-end.
 
+Put-In-Pipe - application for direct file transfer between users, where the server does not store the entire file (and therefore does not limit the size of the transferred file to its disk), but acts as an intermediate buffer: it accepted part of the file from the sender, gave it to the recipients, and so on until the file is transferred in its entirety. The architecture is based on the REST API and WebSocket, the implementation can be either a web application in JS or in other languages for desktop use. The server implementation leaves room for the frontend in the key to protecting the transmitted data: you can use end-to-end encryption between users (taking into account the size of the added overhead), or transfer files in the clear. At the beginning of the project, it was assumed that the transmitted files should be protected from interception on the ChaCha20-Poly1305 server side by placing the key in the link via an anchor (#), which, according to the HTTP standard, is not transmitted from the address bar to the server when opening the site.
+
 # Common endpoints
 
 A simple piece of logic, not directly related to file transfer
