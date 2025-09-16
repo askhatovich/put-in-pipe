@@ -763,7 +763,8 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
 
     if (action == "set_file_info") // creator only
     {
-        if (client->id() != session->id())
+        const auto creatorSp = session->sender().lock();
+        if (creatorSp == nullptr or creatorSp->id() != client->id())
         {
             conn.close("Only the session creator can set the file information", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
@@ -780,7 +781,8 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     }
     else if (action == "upload_finished") // creator only
     {
-        if (client->id() != session->id())
+        const auto creatorSp = session->sender().lock();
+        if (creatorSp == nullptr or creatorSp->id() != client->id())
         {
             conn.close("Only the session creator can set the upload finish", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
@@ -790,7 +792,8 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     }
     else if (action == "kick_receiver") // creator only
     {
-        if (client->id() != session->id())
+        const auto creatorSp = session->sender().lock();
+        if (creatorSp == nullptr or creatorSp->id() != client->id())
         {
             conn.close("Only the session creator can delete participants", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
@@ -807,7 +810,8 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     }
     else if (action == "terminate_session") // creator only
     {
-        if (client->id() != session->id())
+        const auto creatorSp = session->sender().lock();
+        if (creatorSp == nullptr or creatorSp->id() != client->id())
         {
             conn.close("Only the creator of the session can forcibly terminate it", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
