@@ -1,9 +1,12 @@
 #pragma once
 
 #include <string>
+#include <list>
 
 namespace Event {
-namespace Data { enum class TransferSessionCompleteType; }
+namespace Data {
+enum class TransferSessionCompleteType;
+struct ChunkInfo;}
 }
 
 namespace SerializableEvent {
@@ -64,9 +67,9 @@ struct NewChunkAvailable
     std::string json() const;
 };
 
-struct ChunkCount
+struct ChunksRemoved
 {
-    size_t value = 0;
+    std::list<size_t> list;
 
     std::string json() const;
 };
@@ -116,8 +119,22 @@ struct AddingChunkFailure
     std::string json() const;
 };
 
-struct SetFileNameFailure
+struct SetFileInfoFailure
 {
+    std::string json() const;
+};
+
+struct GetChunkFailure
+{
+    std::list<Event::Data::ChunkInfo> list;
+
+    std::string json() const;
+};
+
+struct UnknownAction
+{
+    std::string action;
+
     std::string json() const;
 };
 

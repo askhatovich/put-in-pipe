@@ -8,7 +8,7 @@
 
 namespace TransferSessionDetails {
 
-Chunk::Chunk(SharedExpectedConsumerCount consumerCount, const uint8_t *data, size_t size) :
+Chunk::Chunk(AtomicSetSizeAccess consumerCount, const uint8_t *data, size_t size) :
     m_data(new std::vector<uint8_t>(data, data+size)),
     m_consumerExpected(consumerCount)
 {

@@ -63,8 +63,7 @@ bool TransferSession::addReceiver(std::shared_ptr<Client> client)
         }
     }
 
-    const auto oldConsumersCount = m_dataReceivers.size();
-    if (not m_buffer.setExpectedConsumerCount(oldConsumersCount + 1))
+    if (not m_buffer.addNewToExpectedConsumers(client->publicId()))
     {
         return false;
     }
@@ -119,7 +118,6 @@ void TransferSession::removeReceiver(const std::string &publicId)
         }
     }
 
-
     if (m_dataReceivers.empty() and m_buffer.someChunksWasRemoved())
     {
         /*
@@ -132,7 +130,12 @@ void TransferSession::removeReceiver(const std::string &publicId)
         return;
     }
 
-    m_buffer.setExpectedConsumerCount(m_dataReceivers.size());
+    std::list<size_t> removedChunks;
+    m_buffer.removeOneFromExpectedConsumers(publicId, removedChunks);
+    if (not removedChunks.empty())
+    {
+        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
+    }
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::receiverRemoved, publicId);
 }
 
@@ -160,7 +163,6 @@ bool TransferSession::setFileInfo(const FileInfo &info)
 
 bool TransferSession::addChunk(const std::string &binaryData)
 {
-    const auto oldCount = m_buffer.chunkCount();
     const auto oldAllowed = m_buffer.newChunkIsAllowed();
 
     const auto newIndex = m_buffer.addChunk(binaryData);
@@ -169,17 +171,11 @@ bool TransferSession::addChunk(const std::string &binaryData)
         return false;
     }
 
-    Event::Data::TransferSessionNewChunkInfo info;
-    info.chunkId = newIndex;
-    info.chunkSize = binaryData.size();
+    Event::Data::ChunkInfo info;
+    info.index = newIndex;
+    info.size = binaryData.size();
 
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::newChunkIsAvailable, info);
-
-    const auto newCount = m_buffer.chunkCount();
-    if (oldCount != newCount)
-    {
-        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::availableChunksUpdated, newCount);
-    }
 
     const auto newAllowed = m_buffer.newChunkIsAllowed();
     if (oldAllowed != newAllowed)
@@ -229,18 +225,19 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
          * The size of the overhead is adjusted so that users can be informed
          * of the practical size of the useful data (for displaying the progress bar, for example)
          */
-        client->incrementReceived(chunk->size() - Config::instance().apiEveryChunkOverhead());
+        client->incrementReceived(chunk->size());
     }
 
-    const auto oldCount = m_buffer.chunkCount();
     const auto oldAllowed = m_buffer.newChunkIsAllowed();
+    std::list<size_t> removedChunks;
 
-    if (not m_buffer.setChunkAsReceived(index)) return;
+    if (not m_buffer.setChunkAsReceived(index, removedChunks)) return;
 
     const auto newCount = m_buffer.chunkCount();
-    if (oldCount != newCount)
+
+    if (not removedChunks.empty())
     {
-        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::availableChunksUpdated, newCount);
+        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
     }
 
     const auto newAllowed = m_buffer.newChunkIsAllowed();
@@ -260,6 +257,12 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
     {
         TransferSessionList::instanse().remove(m_id);
     }
+}
+
+void TransferSession::manualTerminate()
+{
+    m_completeType = Event::Data::TransferSessionCompleteType::senderIsGone;
+    TransferSessionList::instanse().remove(m_id);
 }
 
 void TransferSession::setTimedout()
@@ -286,6 +289,12 @@ void TransferSession::dropInitialChunksFreeze()
     if (m_dataReceivers.empty())
     {
         m_completeType = Event::Data::TransferSessionCompleteType::receiversIsGone;
+        TransferSessionList::instanse().remove(m_id);
+        return;
+    }
+    if (m_fileInfo.name.empty())
+    {
+        m_completeType = Event::Data::TransferSessionCompleteType::senderIsGone;
         TransferSessionList::instanse().remove(m_id);
         return;
     }

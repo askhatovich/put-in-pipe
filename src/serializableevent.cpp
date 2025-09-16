@@ -1,6 +1,7 @@
 #include "serializableevent.h"
 #include "crowlib/crow/json.h"
 #include "transfersession.h"
+#include "buffer.h"
 
 std::string SerializableEvent::Online::json() const
 {
@@ -94,13 +95,20 @@ std::string SerializableEvent::NewChunkAvailable::json() const
     return root.dump();
 }
 
-std::string SerializableEvent::ChunkCount::json() const
+std::string SerializableEvent::ChunksRemoved::json() const
 {
+    crow::json::wvalue idxs;
+    size_t index = 0;
+    for (const auto& id: list)
+    {
+        idxs[index++] = id;
+    }
+
     crow::json::wvalue root = {
-        {"event", "chunk_count"},
+        {"event", "chunk_removed"},
         {"data", {
-             {"count", value}
-         }}
+            {"id", std::move(idxs)}
+        }}
     };
 
     return root.dump();
@@ -110,7 +118,7 @@ std::string SerializableEvent::UploadFinished::json() const
 {
     crow::json::wvalue root = {
         {"event", "upload_finished"},
-        {"data", nullptr}
+        {"data", crow::json::wvalue::empty_object()}
     };
 
     return root.dump();
@@ -162,7 +170,7 @@ std::string SerializableEvent::ChunksAreUnfrozen::json() const
 {
     crow::json::wvalue root = {
         {"event", "chunks_unfrozen"},
-        {"data", nullptr}
+        {"data", crow::json::wvalue::empty_object()}
     };
 
     return root.dump();
@@ -184,18 +192,53 @@ std::string SerializableEvent::AddingChunkFailure::json() const
 {
     crow::json::wvalue root = {
         {"event", "add_chunk_failure"},
-        {"data", nullptr}
+        {"data", crow::json::wvalue::empty_object()}
     };
 
     return root.dump();
 }
 
-std::string SerializableEvent::SetFileNameFailure::json() const
+std::string SerializableEvent::SetFileInfoFailure::json() const
 {
     crow::json::wvalue root = {
-        {"event", "set_file_name_failure"},
-        {"data", nullptr}
+        {"event", "set_file_info_failure"},
+        {"data", crow::json::wvalue::empty_object()}
     };
 
     return root.dump();
 }
+
+std::string SerializableEvent::GetChunkFailure::json() const
+{
+    crow::json::wvalue infoJson;
+    size_t counter = 0;
+    for (const auto& info: list)
+    {
+        infoJson[counter]["index"] = info.index;
+        infoJson[counter]["size"] = info.size;
+
+        ++counter;
+    }
+
+    crow::json::wvalue root = {
+        {"event", "requested_chunk_not_found"},
+        {"data", {
+            {"available", std::move(infoJson)}
+        }}
+    };
+
+    return root.dump();
+}
+
+std::string SerializableEvent::UnknownAction::json() const
+{
+    crow::json::wvalue root = {
+        {"event", "unknown_action"},
+        {"data", {
+            {"name", action}
+        }
+    }};
+
+    return root.dump();
+}
+

@@ -197,28 +197,28 @@ void Client::update(Event::TransferSession event, std::any data)
     else if (event == Event::TransferSession::newChunkIsAvailable)
     {
         try {
-            const auto info = std::any_cast<Event::Data::TransferSessionNewChunkInfo>(data);
+            const auto info = std::any_cast<Event::Data::ChunkInfo>(data);
             if (auto sp = m_webSocketConnection.lock())
             {
-                sp->sendText( SerializableEvent::NewChunkAvailable{info.chunkId, info.chunkSize}.json() );
+                sp->sendText( SerializableEvent::NewChunkAvailable{info.index, info.size}.json() );
             }
         } catch (const std::bad_any_cast& e) {
             std::cerr << "Client::update - Event::TransferSession::newChunkIsAvailable "
-                         "- expected TransferSessionNewChunkInfo: " << e.what() << std::endl;
+                         "- expected ChunkInfo: " << e.what() << std::endl;
         }
         return;
     }
-    else if (event == Event::TransferSession::availableChunksUpdated)
+    else if (event == Event::TransferSession::chunksWasRemoved)
     {
         try {
-            const auto count = std::any_cast<size_t>(data);
+            const auto list = std::any_cast<std::list<size_t>>(data);
             if (auto sp = m_webSocketConnection.lock())
             {
-                sp->sendText( SerializableEvent::ChunkCount{count}.json() );
+                sp->sendText( SerializableEvent::ChunksRemoved{list}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::availableChunksUpdated "
-                         "- expected size_t: " << e.what() << std::endl;
+            std::cerr << "Client::update - Event::TransferSession::chunksWasRemoved "
+                         "- expected std::list<size_t>: " << e.what() << std::endl;
         }
         return;
     }

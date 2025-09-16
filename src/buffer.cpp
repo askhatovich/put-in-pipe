@@ -13,18 +13,20 @@
 
 namespace TransferSessionDetails {
 
-Buffer::Buffer() : m_expectedConsumerCount(new std::atomic<size_t>( 0 ))
+Buffer::Buffer() : m_expectedConsumers(new AtomicSet<std::string>())
 {
 
 }
 
 size_t Buffer::addChunk(const std::string &binaryData)
 {
-    if (binaryData.size() > Config::instance().transferSessionMaxChunkSize())
+    if (m_EOF)
     {
+        std::cerr << "Buffer::addChunk() anomaly: EOF is true" << std::endl;
         return 0;
     }
-    if (binaryData.size() < Config::instance().apiEveryChunkOverhead())
+
+    if (binaryData.size() > Config::instance().transferSessionMaxChunkSize())
     {
         return 0;
     }
@@ -36,14 +38,8 @@ size_t Buffer::addChunk(const std::string &binaryData)
         return 0;
     }
 
-    if (m_EOF)
-    {
-        std::cerr << "Buffer::addChunk() anomaly: EOF is true" << std::endl;
-        return 0;
-    }
-
     auto [iterator, inserted] = m_chunks.try_emplace(++m_chunksMaxIndex,
-                                                     new Chunk(m_expectedConsumerCount,
+                                                     new Chunk(m_expectedConsumers,
                                                                reinterpret_cast<const uint8_t*>(binaryData.data()),
                                                                binaryData.size()));
 
@@ -80,7 +76,7 @@ const std::shared_ptr<const std::vector<uint8_t>> Buffer::operator[](size_t inde
     return data;
 }
 
-bool Buffer::setChunkAsReceived(size_t index)
+bool Buffer::setChunkAsReceived(size_t index, std::list<size_t>& removedChunks)
 {
     std::unique_lock lock(m_sharedMtx);
 
@@ -92,7 +88,7 @@ bool Buffer::setChunkAsReceived(size_t index)
 
     (*iter->second).incrementUses();
 
-    sanitize();
+    sanitize(removedChunks);
 
     return true;
 }
@@ -124,6 +120,34 @@ bool Buffer::newChunkIsAllowed() const
     return Config::instance().transferSessionChunkQueueMaxSize() < chunkCount();
 }
 
+std::list<size_t> Buffer::chunksIndex() const
+{
+    std::shared_lock lock(m_sharedMtx);
+
+    std::list<size_t> list;
+
+    for (const auto& c: m_chunks)
+    {
+        list.push_back(c.first);
+    }
+
+    return list;
+}
+
+std::list<Event::Data::ChunkInfo> Buffer::chunksInfo() const
+{
+    std::shared_lock lock(m_sharedMtx);
+
+    std::list<Event::Data::ChunkInfo> list;
+
+    for (const auto& c: m_chunks)
+    {
+        list.push_back({c.first, c.second->dataSize()});
+    }
+
+    return list;
+}
+
 void Buffer::setEndOfFile()
 {
     std::unique_lock lock(m_sharedMtx);
@@ -144,37 +168,38 @@ bool Buffer::someChunksWasRemoved() const
     return m_someChunkWasRemoved;
 }
 
-bool Buffer::setExpectedConsumerCount(size_t value)
+bool Buffer::addNewToExpectedConsumers(const std::string &publicId)
 {
     std::unique_lock lock(m_sharedMtx);
 
-    if (*m_expectedConsumerCount == value)
+    // If the new number is greater than the previous one, checks are required.
+    if (m_someChunkWasRemoved or
+        m_expectedConsumers->size()+1 > Config::instance().transferSessionMaxConsumerCount())
     {
-        return true;
+        return false;
     }
 
-    if (*m_expectedConsumerCount < value)
+    if (not m_expectedConsumers->add(publicId))
     {
-        // If the new number is greater than the previous one, checks are required.
-        if (m_someChunkWasRemoved or
-            value > Config::instance().transferSessionMaxConsumerCount())
-        {
-            return false;
-        }
+        return false;
     }
-
-    *m_expectedConsumerCount = value;
-
-    sanitize();
 
     return true;
+}
+
+void Buffer::removeOneFromExpectedConsumers(const std::string &publicId, std::list<size_t>& removedChunks)
+{
+    if (m_expectedConsumers->remove(publicId))
+    {
+        sanitize(removedChunks);
+    }
 }
 
 size_t Buffer::expectedConsumerCount() const
 {
     std::shared_lock lock(m_sharedMtx);
 
-    return *m_expectedConsumerCount;
+    return m_expectedConsumers->size();
 }
 
 bool Buffer::setInitialChunksFreezingDropped()
@@ -197,7 +222,7 @@ bool Buffer::initialChunksFreezing() const
     return m_initialChunksFreezing;
 }
 
-void Buffer::sanitize()
+void Buffer::sanitize(std::list<size_t>& removed)
 {
     // no mutex here - called privately with upstream block
 
@@ -216,6 +241,7 @@ void Buffer::sanitize()
                 m_someChunkWasRemoved = true;
             }
 
+            removed.push_back(iter->first);
             iter = m_chunks.erase(iter);
         }
         else

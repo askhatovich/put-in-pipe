@@ -69,6 +69,7 @@ add_executable(put-in-pipe main.cpp
     timercallback.h timercallback.cpp
     webapi.h webapi.cpp
     captcha/token.cpp
+    atomicset.h
 )
 
 target_compile_definitions(put-in-pipe PRIVATE CROW_ENFORCE_WS_SPEC)

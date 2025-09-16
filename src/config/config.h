@@ -12,7 +12,6 @@ public:
     void setApiMaxClientCount(size_t value)                { m_apiMaxClientCount = value; }
     void setApiWithoutCaptchaThreshold(size_t value)       { m_apiWithoutCaptchaThreshold = value; }
     void setApiCaptchaLifetime(size_t value)               { m_apiCaptchaLifetime = value; }
-    void setApiEveryChunkOverhead(size_t value)            { m_apiEveryChunkOverhead = value; }
     void setClientTimeout(size_t value)                    { m_clientTimeout = value; }
     void setTransferSessionCountLimit(size_t value)        { m_transferSessionCountLimit = value; }
     void setTransferSessionMaxChunkSize(size_t value)      { m_transferSessionMaxChunkSize = value; }
@@ -27,7 +26,6 @@ public:
     size_t apiMaxClientCount() const                { return m_apiMaxClientCount; }
     size_t apiWithoutCaptchaThreshold() const       { return m_apiWithoutCaptchaThreshold; }
     size_t apiCaptchaLifetime() const               { return m_apiCaptchaLifetime; }
-    size_t apiEveryChunkOverhead() const            { return m_apiEveryChunkOverhead; }
     size_t transferSessionCountLimit() const        { return m_transferSessionCountLimit; }
     size_t transferSessionMaxChunkSize() const      { return m_transferSessionMaxChunkSize; }
     size_t transferSessionMaxLifetime() const       { return m_transferSessionMaxLifetime; }
@@ -46,7 +44,6 @@ private:
     size_t m_apiMaxClientCount = 0;
     size_t m_apiWithoutCaptchaThreshold = 0;
     size_t m_apiCaptchaLifetime = 0;
-    size_t m_apiEveryChunkOverhead = 0;
     size_t m_clientTimeout = 0;
     size_t m_transferSessionCountLimit = 0;
     size_t m_transferSessionMaxChunkSize = 0;

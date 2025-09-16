@@ -4,11 +4,23 @@
 
 #pragma once
 
+#include "atomicset.h"
+
 #include <map>
 #include <shared_mutex>
 #include <memory>
-#include <atomic>
 #include <vector>
+#include <list>
+
+namespace Event {
+namespace Data {
+struct ChunkInfo
+{
+    size_t index = 0;
+    size_t size = 0;
+};
+}
+}
 
 namespace TransferSessionDetails {
 
@@ -22,7 +34,7 @@ public:
     // return index of new chunk or 0
     size_t addChunk(const std::string& binaryData);
     const std::shared_ptr<const std::vector<uint8_t>> operator[](size_t index) const;
-    bool setChunkAsReceived(size_t index);
+    bool setChunkAsReceived(size_t index, std::list<size_t>& removedChunks);
 
     size_t bytesIn() const;
     size_t bytesOut() const;
@@ -30,6 +42,8 @@ public:
     size_t currentMaxChunkIndex() const;
     size_t chunkCount() const;
     bool newChunkIsAllowed() const;
+    std::list<size_t> chunksIndex() const;
+    std::list<Event::Data::ChunkInfo> chunksInfo() const;
 
     void setEndOfFile();
     bool eof() const;
@@ -38,13 +52,14 @@ public:
     bool initialChunksFreezing() const;
 
     bool someChunksWasRemoved() const;
-    bool setExpectedConsumerCount(size_t value);
+    bool addNewToExpectedConsumers(const std::string& publicId);
+    void removeOneFromExpectedConsumers(const std::string& publicId, std::list<size_t>& removedChunks);
     size_t expectedConsumerCount() const;
 
 private:
     mutable std::shared_mutex m_sharedMtx;
 
-    std::shared_ptr<std::atomic<size_t>> m_expectedConsumerCount;
+    std::shared_ptr<AtomicSet<std::string/*user's public id*/>> m_expectedConsumers;
     std::map<size_t, std::shared_ptr<Chunk>> m_chunks;
     size_t m_chunksMaxIndex = 0;
     size_t m_bytesInTotal = 0;
@@ -59,7 +74,7 @@ private:
      */
     bool m_initialChunksFreezing = true;
 
-    void sanitize();
+    void sanitize(std::list<size_t>& removed);
 };
 
 } // namespace TransferSessionDetails

@@ -1,8 +1,8 @@
-# Web interface API
+## Web interface API
 
 Put-In-Pipe documentation for front-end.
 
-## Common endpoints
+# Common endpoints
 
 A simple piece of logic, not directly related to file transfer
 
@@ -65,7 +65,7 @@ Possible answers:
 
 ---
 
-## Creating an identifier
+# Creating an identifier
 
 The service does not provide for the usual registration with a username and password. All users remain incognito, but to combat the harmful load and to ensure the operation of the application logic, the service installs cookies.
 
@@ -175,9 +175,7 @@ If successful, you need to establish a websocket connection.
 
 ---
 
-## WebSocket connection
-
-All websocket text messages contain JSON. Server messages must be processed using the `event` field, and all incoming messages from the client must contain the `action` key.
+# WebSocket connection
 
 ```
 /api/ws
@@ -206,7 +204,12 @@ Immediately after connection, the server sends the information necessary to init
       }
       "expiration_in": 7200,
       "some_chunk_was_removed": false,
-      "chunk_queue": 0,
+      "chunks": [
+        {
+          "index": 1,
+          "size": 2356
+        }
+      ],
       "initial_freeze": true,
       "upload_finished": false,
       "current_chunk": 0
@@ -240,15 +243,330 @@ If `.state.file` has an empty name and zero size, this is a sure sign that the f
 - `state` - Global session status
   - `expiration_in` - The number of seconds remaining before the session is deleted due to reaching the maximum lifetime (timeout); 
   - `some_chunk_was_removed` - Whether at least one chunk was deleted. If true, new users cannot join such a session because some of the data is lost;
-  - `chunk_queue` - Number of chunks in the buffer;
+  - `chunks` - Information about existing chunks (there are no chunks yet when creating the session, given as an example);
   - `initial_freeze` - Initial freezing. If active, chunks are not deleted from the buffer even if all known recipients have downloaded it. This allows a new recipient to connect to the session;
   - `upload_finished` - The sender uploaded the file in full;
   - `current_chunk` -  The number of the last uploaded chunk.
 - `members` - List of participants
-  - `sender` - Sender. One user;
+  - `sender` - Sender. It **can be set to `null`** if the user is disconnected (but the file is fully uploaded and the session continues to exist);
   - `receivers` - An array containing other users with similar fields + `current_chunk` which shows their last downloaded chunk.
 - `limits` - Global limits
   - `max_chunk_queue` - Maximum number of chunks in a buffer;
-  - `max_initial_freeze` - The maximum duration of the initial freeze in seconds (when reached, the freeze will be reset automatically). **This parameter is also responsible for the maximum waiting time for recipients. If there are none, the session will be terminated**;
-  - `max_chunk_size` - The maximum size of the chunk that the sender can upload (there is an excess of 16 bytes, which are the Poly1305 tag);
+  - `max_initial_freeze` - The maximum duration of the initial freeze in seconds (when reached, the freeze will be reset automatically). **This parameter is also responsible for the maximum waiting time for recipients. If there are none, the session will be terminated. If the file information is not set at the time the initial freeze is dropped, the session will also be destroyed**;
+  - `max_chunk_size` - The maximum size of the chunk that the sender can upload;
   - `max_receiver_count` - Maximum number of receivers.
+  
+---
+
+All websocket text messages contain JSON. Server messages must be processed using the `event` field, and all incoming messages from the client must contain the `action` key. The payload must always be contained in the `data` object. If the message grossly violates the expected format, i.e. violates the protocol described here, the connection is closed with a text description of the problem and code 1003 (Unsupported Data).
+
+---
+
+## Events sent by the server
+
+### E1. Related to other users
+
+#### E1.1 Online
+
+Notifies of an active websocket connection. If the user is not connected for a long time (60 seconds), he is deleted.
+
+```
+{
+  "event": "online",
+  "data": {
+    "id": "user's id",
+    "status": true
+  }
+}
+```
+
+#### E1.2 Name change
+
+```
+{
+  "event": "name_changed",
+  "data": {
+    "id": "user's id",
+    "name": "New user's name"
+  }
+}
+```
+
+### E2. Related to the transfer session
+
+#### E2.1 A new receiver in the session
+
+```
+{
+  "event": "new_receiver",
+  "data": {
+    "id": "user's id",
+    "name": "Username"
+  }
+}
+```
+
+#### E2.2 The client has been deleted
+
+```
+{
+  "event": "receiver_removed",
+  "data": {
+    "id": "user's id"
+  }
+}
+```
+
+#### E2.3 The file information is set
+
+```
+{
+  "event": "file_info",
+  "data": {
+    "name": "archive.zip",
+    "size": 61359353
+  }
+}
+```
+
+Size in bytes.
+
+#### E2.4 A new chunk is available
+
+A new chunk has been uploaded, which is available for download.
+
+```
+{
+  "event": "new_chunk",
+  "data": {
+    "index": 31,
+    "size": 1536282
+  }
+}
+```
+
+Size in bytes.
+
+#### E2.5 Downloading a chunk
+
+The event indicates the start of the download and the finish when the receiver explicitly confirms receiving.
+
+```
+{
+  "event": "chunk_download",
+  "data": {
+    "id": "user's id",
+    "index": 31,
+    "action": "started" or "finished"
+  }
+}
+```
+
+#### E2.6 The chunk has been deleted
+
+```
+{
+  "event": "chunk_removed",
+  "data": {
+    "id": [
+      78
+    ]
+  }
+}
+```
+
+#### E2.7 Сounter of total transfered data has increased
+
+```
+{
+  "event": "bytes_count",
+  "data": {
+    "value": 3927538,
+    "direction": "from_sender" or "to_receivers"
+  }
+}
+```
+
+#### E2.8 The initial freezing of chunks has been reset
+
+```
+{
+  "event": "chunks_unfrozen",
+  "data": {}
+}
+```
+
+#### E2.9 The file upload is completed
+
+After this event, new chunks cannot be created.
+
+```
+{
+  "event": "upload_finished",
+  "data": {}
+}
+```
+
+#### E2.10 The session is over
+
+```
+{
+  "event": "complete",
+  "data": {
+    "status": "Read below"
+  }
+}
+```
+
+Possible statuses:
+- `ok` - Normal completion;
+- `timeout` - The session was deleted due to timeout;
+- `sender_is_gone` - The sender left the line;
+- `receivers_is_gone` - The receivers are gone;
+- `error` - Another error.
+
+#### E2.11 The option to upload a new chunk is available
+
+The event is only for the session creator. Notifies that the new chunk is available for upload. If it is not allowed, it means that the buffer is full.
+
+```
+{
+  "event": "new_chunk_allowed",
+  "data": {
+    "status": false
+  }
+}
+```
+
+---
+  
+## Actions sent by the user
+
+### A1. Admin options for the session creator
+
+#### A1.1 Setting the file information
+
+It can be specified only once. The size is specified in bytes.
+
+```
+{
+  "action": "set_file_info",
+  "data": {
+    "name": "my_video.mp4",
+    "size": 17654927 
+  }
+}
+```
+
+An error is possible if the information has already been set, or the size is zero, or an empty name has been passed, or the length of the name exceeds the limit (255 bytes). In case of an error, it returns an individual event:
+
+```
+{
+  "event": "set_file_info_failure",
+  "data": {}
+}
+```
+
+#### A1.2 File upload completed
+
+```
+{
+  "action": "upload_finished",
+  "data": {}
+}
+```
+
+#### A1.3 Delete the receiver
+
+```
+{
+  "action": "kick_receiver",
+  "data": {
+    "id": "another-user-id"
+  }
+}
+```
+
+The session creator cannot delete himself, it will be an error.
+
+#### A1.4 Forced session termination
+
+```
+{
+  "action": "terminate_session",
+  "data": {}
+}
+```
+
+#### A1.5 Sending a new chunk
+
+The session creator can send binary data. They will be treated as a new chunk and added to the session buffer. If adding to the buffer failed, an individual event will be returned:
+
+```
+{
+  "event": "add_chunk_failure",
+  "data": {}
+}
+```
+
+An error is possible if the chunk buffer is full.
+
+### A2. General actions
+
+#### A2.1 Name change
+
+```
+{
+  "action": "new_name",
+  "data": {
+    "name": "The lazy snail"
+  }
+}
+```
+
+The name must be in UTF-8 format. The length of the name is automatically shortened to the maximum allowed (20 characters).
+
+#### A2.2 Getting a chunk
+
+```
+{
+  "action": "get_chunk",
+  "data": {
+    "id": 78
+  }
+}
+```
+
+If the requested fragment is not found, a separate event is returned containing information about existing  chunks:
+
+```
+{
+  "event": "requested_chunk_not_found",
+  "data": {
+    "available": [
+      {
+        "index": 79,
+        "size": 62857
+      },
+      {
+        "index": 80,
+        "size": 62857
+      }
+  ]
+}
+```
+
+If successful, the response contains the binary of the requested chunk.
+
+#### A2.3 Confirmation of receiving of the chunk
+
+A chunk is considered received only after explicit confirmation. When a chunk is received by all receivers, it is deleted from the buffer, making room for a new chunk.
+
+```
+{
+  "action": "confirm_chunk",
+  "data": {
+    "id": 81
+  }
+}
+```

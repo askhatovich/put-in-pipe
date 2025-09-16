@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "atomicset.h"
+
 #include <atomic>
 #include <memory>
 #include <shared_mutex>
@@ -11,21 +13,21 @@
 
 namespace TransferSessionDetails {
 
-class SharedExpectedConsumerCount
+class AtomicSetSizeAccess
 {
 public:
-    SharedExpectedConsumerCount(std::shared_ptr<std::atomic<size_t>> sourceNumber)
-        : m_number(sourceNumber) {}
-    size_t value() const { return *m_number; }
+    AtomicSetSizeAccess(std::shared_ptr<AtomicSet<std::string>> set)
+        : m_set(set) {}
+    size_t value() const { return m_set->size(); }
 
 private:
-    std::shared_ptr<std::atomic<size_t>> m_number;
+    std::shared_ptr<AtomicSet<std::string>> m_set;
 };
 
 class Chunk
 {
 public:
-    Chunk(SharedExpectedConsumerCount consumerCount, const uint8_t* data, size_t size);
+    Chunk(AtomicSetSizeAccess consumerCount, const uint8_t* data, size_t size);
 
     size_t howMuchIsLeft() const;
     size_t usesCount() const;
@@ -35,7 +37,7 @@ public:
 
 private:
     const std::shared_ptr<const std::vector<uint8_t>> m_data;
-    const SharedExpectedConsumerCount m_consumerExpected;
+    const AtomicSetSizeAccess m_consumerExpected;
     mutable std::shared_mutex m_usesMutex;
     mutable std::atomic<size_t> m_uses = 0;
 };

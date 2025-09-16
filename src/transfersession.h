@@ -23,8 +23,8 @@ enum class TransferSession {
     fileInfoUpdated,        // FileInfo
     chunkDownloadStarted,   // Data::TransferSessionDownloadInfo
     chunkDownloadFinished,  // Data::TransferSessionDownloadInfo
-    newChunkIsAvailable,    // Data::TransferSessionNewChunkInfo
-    availableChunksUpdated, // size_t
+    newChunkIsAvailable,    // Data::ChunkInfo
+    chunksWasRemoved,       // std::list<size_t>
     bytesInUpdated,         // size_t
     bytesOutUpdated,        // size_t
     chunksAreUnfrozen,      // nullptr
@@ -33,7 +33,7 @@ enum class TransferSession {
 
 };
 enum class TransferSessionForSender {
-    newChunkIsAllowed      // bool
+    newChunkIsAllowed // bool
 };
 
 namespace Data {
@@ -43,12 +43,6 @@ enum class TransferSessionCompleteType
     timeout,
     senderIsGone,
     receiversIsGone
-};
-
-struct TransferSessionNewChunkInfo
-{
-    size_t chunkId = 0;
-    size_t chunkSize = 0;
 };
 
 struct TransferSessionDownloadInfo
@@ -86,17 +80,21 @@ public:
     bool addChunk(const std::string& binaryData);
     const std::shared_ptr<const std::vector<uint8_t>> getChunk(size_t index, std::shared_ptr<Client> client);
     void setChunkAsReceived(size_t index, std::shared_ptr<Client> client);
+    void manualTerminate();
     void setTimedout();
 
-    size_t bytesIn() const              { return m_buffer.bytesIn(); }
-    size_t bytesOut() const             { return m_buffer.bytesOut(); }
-    bool someChunkWasRemoved() const    { return m_buffer.someChunksWasRemoved(); }
-    size_t currentMaxChunkIndex() const { return m_buffer.currentMaxChunkIndex(); }
-    size_t chunkCount() const           { return m_buffer.chunkCount(); }
-    bool newChunkIsAllowed() const      { return m_buffer.newChunkIsAllowed(); }
+    size_t bytesIn() const                { return m_buffer.bytesIn(); }
+    size_t bytesOut() const               { return m_buffer.bytesOut(); }
+    bool someChunkWasRemoved() const      { return m_buffer.someChunksWasRemoved(); }
+    size_t currentMaxChunkIndex() const   { return m_buffer.currentMaxChunkIndex(); }
+    // size_t chunkCount() const             { return m_buffer.chunkCount(); }
+    // std::list<size_t> chunksIndex() const { return m_buffer.chunksIndex(); }
+
+    bool newChunkIsAllowed() const        { return m_buffer.newChunkIsAllowed(); }
     void setEndOfFile();
     bool eof() const                    { return m_buffer.eof(); }
     bool initialChunksFreeze() const    { return m_buffer.initialChunksFreezing(); }
+    std::list<Event::Data::ChunkInfo> chunksInfo() { return m_buffer.chunksInfo(); }
     void dropInitialChunksFreeze();
     std::chrono::seconds remainingUntilAutoDropInitialFreeze() const;
 

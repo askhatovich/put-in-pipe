@@ -13,7 +13,7 @@ int main()
     cfg.setBindPort(2233);
     cfg.setApiMaxClientCount(50);
     cfg.setApiCaptchaLifetime(60*3);
-    cfg.setApiWithoutCaptchaThreshold(1);
+    cfg.setApiWithoutCaptchaThreshold(0);
     cfg.setClientTimeout(60);
     cfg.setTransferSessionMaxChunkSize(1024*1024*5);
     cfg.setTransferSessionChunkQueueMaxSize(10);
@@ -21,7 +21,6 @@ int main()
     cfg.setTransferSessionMaxLifetime(60*60*2);
     cfg.setTransferSessionMaxConsumerCount(5);
     cfg.setTransferSessionMaxInitialFreezeDuration(60*2);
-    cfg.setApiEveryChunkOverhead(16); // 16 bytes is poly1305 tag
 
     WebAPI webInterface;
     webInterface.run();

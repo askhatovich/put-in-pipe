@@ -48,6 +48,9 @@ class Client : public Publisher<Event::ClientDirect>,
                public Subscriber<Event::TransferSessionForSender>
 {
 public:
+    /*
+     * A long name doesn't make sense and can be a problem for the UI in some cases.
+     */
     static constexpr uint8_t NAME_MAX_LENGTH = 20;
 
     ~Client();

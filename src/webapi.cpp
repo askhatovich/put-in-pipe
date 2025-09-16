@@ -584,6 +584,17 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
 
     const auto fileInfo = session.first->fileInfo();
 
+    const auto chunksInfoList = session.first->chunksInfo();
+    crow::json::wvalue chunksInfo;
+    size_t chunksCounter = 0;
+    for (const auto& info: chunksInfoList)
+    {
+        chunksInfo[chunksCounter]["index"] = info.index;
+        chunksInfo[chunksCounter]["size"] = info.size;
+
+        ++chunksCounter;
+    }
+
     crow::json::wvalue json {
         {"session_id", session.first->id()},
         {"limits", {
@@ -594,14 +605,14 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
         }},
         {"members", {
             {"receivers", receiverArray},
-            {"sender", senderInfo}
+            {"sender", sender ? senderInfo : nullptr}
         }},
         {"state", {
             {"current_chunk", session.first->currentMaxChunkIndex()},
             {"upload_finished", session.first->eof()},
             {"some_chunk_was_removed", session.first->someChunkWasRemoved()},
             {"initial_freeze", session.first->initialChunksFreeze()},
-            {"chunk_queue", session.first->chunkCount()},
+            {"chunks", std::move(chunksInfo)},
             {"expiration_in", session.second},
             {"file", {
                 {"name", fileInfo.name},
@@ -648,7 +659,7 @@ void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &d
     auto session = TransferSessionList::instanse().get(joinedSessionId);
     if (session.first == nullptr)
     {
-        conn.close("Session not found", crow::websocket::CloseStatusCode::ClosedAbnormally);
+        conn.close("Session not found", crow::websocket::CloseStatusCode::NormalClosure);
         return;
     }
 
@@ -658,12 +669,12 @@ void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &d
         const auto sessionCreator = session.first->sender().lock();
         if (sessionCreator == nullptr)
         {
-            conn.close("It is impossible to verify the session creator", crow::websocket::CloseStatusCode::ClosedAbnormally);
+            conn.close("It is impossible to verify the session creator", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
         }
         if (client->id() != sessionCreator->id())
         {
-            conn.close("Only the session creator can send binary data", crow::websocket::CloseStatusCode::ClosedAbnormally);
+            conn.close("Only the session creator can send binary data", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
         }
         if (not session.first->addChunk(data))
@@ -677,25 +688,25 @@ void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &d
         const auto json = crow::json::load(data);
         if (! json)
         {
-            conn.close("Text messages are expected only in JSON format", crow::websocket::CloseStatusCode::ClosedAbnormally);
+            conn.close("Text messages are expected only in JSON format", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
         }
 
         if (not json.has("action") or json["action"].t() != crow::json::type::String)
         {
-            conn.close("Invalid JSON: the 'action' string must be passed", crow::websocket::CloseStatusCode::ClosedAbnormally);
+            conn.close("Invalid JSON: the 'action' string must be passed", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
         }
 
         if (not json.has("data") or json["data"].t() != crow::json::type::Object)
         {
-            conn.close("Invalid JSON: the 'data' object must be passed", crow::websocket::CloseStatusCode::ClosedAbnormally);
+            conn.close("Invalid JSON: the 'data' object must be passed", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
         }
 
         internalWsMessageProcessing(conn, client, session.first, json["action"].s(), json["data"]);
     } catch (const std::exception& e) {
-        conn.close("Exception: " + std::string(e.what()), crow::websocket::CloseStatusCode::ClosedAbnormally);
+        conn.close("Exception: " + std::string(e.what()), crow::websocket::CloseStatusCode::UnacceptableData);
         return;
     }
 }
@@ -725,7 +736,13 @@ void WebAPI::internalCreateClient(const crow::request &req, crow::response &res,
     cookieHeader += "=" + client->id() +
                     "; HttpOnly" +
                     "; Path=/" +
-                    "; Max-Age=86400"; // 24h
+                    "; Max-Age=" + std::to_string(
+                            /*
+                             * The maximum time that a client can exist without creating a session
+                             * (if he is the creator) is added to the session lifetime.
+                             */
+                            Config::instance().transferSessionMaxLifetime() + Config::instance().clientTimeout()
+                        );
 
     res.add_header("Set-Cookie", cookieHeader);
 
@@ -739,16 +756,16 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
                                          std::shared_ptr<Client>& client, std::shared_ptr<TransferSession>& session,
                                          const std::string& action, const crow::json::rvalue &data)
 {
-    if (action == "file_info")
+    /*
+     * Exception handling is not needed here, it is available at a higher level.
+     * Any exception is an invalid request.
+     */
+
+    if (action == "set_file_info") // creator only
     {
         if (client->id() != session->id())
         {
-            conn.close("Only the session creator can set the file information", crow::websocket::CloseStatusCode::ClosedAbnormally);
-            return;
-        }
-        if (not session->fileInfo().name.empty())
-        {
-            conn.close("The file information can be specified only once", crow::websocket::CloseStatusCode::ClosedAbnormally);
+            conn.close("Only the session creator can set the file information", crow::websocket::CloseStatusCode::UnacceptableData);
             return;
         }
 
@@ -757,9 +774,46 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
 
         if (not session->setFileInfo({name, size}))
         {
-            conn.send_text( SerializableEvent::SetFileNameFailure{}.json() );
+            conn.send_text( SerializableEvent::SetFileInfoFailure{}.json() );
         }
         return;
+    }
+    else if (action == "upload_finished") // creator only
+    {
+        if (client->id() != session->id())
+        {
+            conn.close("Only the session creator can set the upload finish", crow::websocket::CloseStatusCode::UnacceptableData);
+            return;
+        }
+
+        session->setEndOfFile();
+    }
+    else if (action == "kick_receiver") // creator only
+    {
+        if (client->id() != session->id())
+        {
+            conn.close("Only the session creator can delete participants", crow::websocket::CloseStatusCode::UnacceptableData);
+            return;
+        }
+
+        const std::string publicId = data["id"].s();
+        if (client->publicId() == publicId)
+        {
+            conn.close("You can't delete yourself", crow::websocket::CloseStatusCode::UnacceptableData);
+            return;
+        }
+
+        session->removeReceiver(publicId);
+    }
+    else if (action == "terminate_session") // creator only
+    {
+        if (client->id() != session->id())
+        {
+            conn.close("Only the creator of the session can forcibly terminate it", crow::websocket::CloseStatusCode::UnacceptableData);
+            return;
+        }
+
+        session->manualTerminate();
     }
     else if (action == "new_name")
     {
@@ -768,6 +822,24 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     }
     else if (action == "get_chunk")
     {
-        // const size_t
+        const size_t chunkId = data["id"].u();
+        const auto data = session->getChunk(chunkId, client);
+        if (data == nullptr)
+        {
+            conn.send_text( SerializableEvent::GetChunkFailure{session->chunksInfo()}.json() );
+        }
+        else
+        {
+            conn.send_binary( {data->begin(), data->end()} );
+        }
+    }
+    else if (action == "confirm_chunk")
+    {
+        const size_t chunkId = data["id"].u();
+        session->setChunkAsReceived(chunkId, client);
+    }
+    else
+    {
+        conn.send_text( SerializableEvent::UnknownAction{action}.json() );
     }
 }
