@@ -44,7 +44,7 @@ Possible answers:
 {
   "session": "",
   "name": "Data miner",
-  "id": "2YrcZ1J9843a46tBnwF8UqqPkFEu5jEzu/irz2myTBE="
+  "id": "2YrcZ1J9843a46tBnwF8UqqPkFEu5jEzuairz2myTBE"
 }
 ```
 
@@ -153,6 +153,8 @@ Possible answers:
 | 500 | Session creation failed | Most likely, there was an error in the internal logic of the server. |
 | 201 | `{"id": "SESSION_ID"}` | The session has been created |
 
+`SESSION_ID` uses secure characters for the URL, so that it can be transmitted in the link without the risk of breaking the logic.
+
 If successful, you need to establish a websocket connection.
 
 ### Join
@@ -189,7 +191,7 @@ Immediately after connection, the server sends the information necessary to init
 {
   "event": "start_init",
   {
-    "session_id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME",
+    "session_id": "FpXC3S1Mf8nV8hhBWzaQc9Fb3XEhFgKxaMJ9ZDDGXME",
     "transferred": {
       "global": {
         "to_receivers": 0,
@@ -218,7 +220,7 @@ Immediately after connection, the server sends the information necessary to init
       "sender": {
         "is_online": false,
         "name": "Data miner",
-        "id": "FpXC3S1Mf8nV8hhBWz/Qc9Fb3XEhFgKxaMJ9ZDDGXME"
+        "id": "FpXC3S1Mf8nV8hhBWzaQc9Fb3XEhFgKxaMJ9ZDDGXME"
       },
       "receivers": []
     },
