@@ -455,7 +455,7 @@ void WebAPI::sessionJoin(const crow::request &req, crow::response &res)
         for (const auto& received: session.first->receivers())
         {
             auto sp = received.lock();
-            if (sp->id() == client->id())
+            if (sp and sp->id() == client->id())
             {
                 isMember = true;
                 break;
