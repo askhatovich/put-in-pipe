@@ -29,7 +29,7 @@ freely, subject to the following restrictions:
 
 enum {
     CAPTCHA_STRING_LENGTH = 5,
-    NUM_OF_SEGMENTS = 4
+    NUM_OF_SEGMENTS = 3
 };
 
 #ifdef __cplusplus

@@ -16,7 +16,7 @@ class Client;
 class ClientList
 {
 public:
-    static constexpr uint8_t ID_LENGTH_BYTES = 18;
+    static constexpr uint8_t ID_LENGTH_BYTES = 12;
 
     ~ClientList();
 

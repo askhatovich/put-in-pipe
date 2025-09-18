@@ -10,8 +10,6 @@ Copyright (c) Kopikova Sofia, 2020
    -- Segment shuffle logic replaced by Y. Kotov
    -- Portions copyright (c) Y. Kotov, 2024
 
-   -- acetone was here in 2025
-
 This software is provided 'as-is', without any express or implied
 warranty. In no event will the authors be held liable for any damages
 arising from the use of this software.
@@ -52,11 +50,9 @@ freely, subject to the following restrictions:
 #define LARR 6
 #define DEG M_PI/6
 #define Y1 22
-// y2 is 186 was by default (acetone)
 #define Y2 72
 #define WIDTH_ONE 22
 #define HEIGHT_ONE 20
-// height is 200 was by default (acetone)
 #define HEIGHT 90
 #ifndef M_PI
 #define M_PI 3.14159
@@ -290,7 +286,7 @@ arrows(unsigned char** in, unsigned x1, unsigned y1, unsigned x2, unsigned y2,
 static void line(unsigned char** in, unsigned x1, unsigned x2, unsigned y,
 		unsigned w, unsigned h)
 {
-	int color = (int)(1);
+    int color = 255;
 	unsigned x;
 	for(x = x1; x < x2; x++)
 	{
@@ -415,9 +411,9 @@ void generate_captcha(char** img, int* imgsize, char* answer)
 		int sz = coords[i].sz;
         hypotenuse(&fin, x1, Y1, x2, Y2, width, height);
         arrows(&fin, x1, Y1, x2, Y2, width, height, LARR);
-        // line(&fin, x1 - sz * WIDTH_ONE / 2 + 2,
-        // 		x1 + sz * WIDTH_ONE / 2 - 2, HEIGHT_ONE + 1,
-        // 						width, height);
+        line(&fin, x1 - sz * WIDTH_ONE / 2 + 5,
+                x1 + sz * WIDTH_ONE / 2 - 5, HEIGHT_ONE + 1,
+                                width, height);
 		rect(&fin, x2 - sz * WIDTH_ONE / 2 + 2,
 				x2 + sz * WIDTH_ONE / 2 - 2, width, height);
 	}
