@@ -66,6 +66,7 @@ public:
     std::string name() const;
     size_t currentChunkIndex() const { return m_currentChunkIndex; }
     bool online() const;
+    void dropCurrentWsConnection();
     size_t bytesReceived() const { return m_bytesReceived; }
 
     void incrementReceived(size_t bytes);

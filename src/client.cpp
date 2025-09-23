@@ -330,6 +330,14 @@ bool Client::online() const
     return not m_timeoutTimer.isRunning();
 }
 
+void Client::dropCurrentWsConnection()
+{
+    if (auto ws = m_webSocketConnection.lock())
+    {
+        ws->close();
+    }
+}
+
 void Client::incrementReceived(size_t bytes)
 {
     m_bytesReceived += bytes;

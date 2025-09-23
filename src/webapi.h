@@ -51,6 +51,8 @@ private:
     void identityValidation(const crow::request& req, crow::response& res);
     void sessionCreate(const crow::request& req, crow::response& res);
     void sessionJoin(const crow::request& req, crow::response& res);
+    void sessionChunkPost(const crow::request& req, crow::response& res);
+    void sessionChunkGet(const crow::request& req, crow::response& res);
 
     bool wsOnAccept(const crow::request& req, void** userdata);
     void wsOnConnect(crow::websocket::connection& conn);

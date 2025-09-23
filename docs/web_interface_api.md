@@ -135,7 +135,7 @@ Possible answers:
 
 ## Preparatory work for the transfer
 
-The file transfer session is performed via WebSocket. This section describes the creation of such a session and the mechanism of joining.
+This section describes the creation of such a session and the mechanism of joining.
 
 ### Create
 
@@ -179,13 +179,53 @@ If successful, you need to establish a websocket connection.
 
 ---
 
+## Downloading and uploading files
+
+An alternative transmission method is via websocket, but in the case of websocket, transmission blocks the receipt of other events. 
+It is recommended to use these methods.
+
+### Get chunk
+
+Request to download the chunk.
+
+```
+GET /api/session/chunk
+```
+
+| Code | Body | Means |
+|---|---|---|
+| 401 | You have not been identified | |
+| 400 | *Error text*| Invalid request |
+| 404 | Chunk not found | |
+| 200 | *Binary data* | Requested binary data |
+
+### Upload chunk
+
+Request to add a new chunk to the buffer (only for the session creator).
+
+```
+POST /api/session/chunk
+```
+
+| Code | Body | Means |
+|---|---|---|
+| 401 | You have not been identified | |
+| 400 | *Error text*| Invalid request |
+| 403 | Only the session creator can send data | |
+| 421 | Adding a chunk failed | The request was made at the wrong time: it is most likely that the buffer is full. |
+| 500 | Session not found | |
+| 202 | *Empty* | The data has been accepted and the new chunk has been successfully added |
+
+---
+
 # WebSocket connection
 
 ```
 /api/ws
 ```
 
-To connect, it is necessary that the cookies contain a valid client ID and the client is attached to a valid session.
+To connect, it is necessary that the cookies contain a valid client ID and the client is attached to a valid session. 
+Only one active connection per user is allowed (when reconnecting, the previous websocket connection will be closed).
 
 Immediately after connection, the server sends the information necessary to initialize the state, `start_init` server's event:
 

@@ -70,13 +70,19 @@ void WebAPI::initRoutes()
     CROW_ROUTE(m_app, "/api/identity/confirmation").methods("POST"_method)
     ([this](const crow::request &req, crow::response &resp){ identityValidation(req, resp); });
 
-    // 2. Create a Session or join it /////
+    // 2. Session /////
 
     CROW_ROUTE(m_app, "/api/session/create").methods("POST"_method)
     ([this](const crow::request &req, crow::response &resp){ sessionCreate(req, resp); });
 
     CROW_ROUTE(m_app, "/api/session/join").methods("GET"_method)
     ([this](const crow::request &req, crow::response &resp){ sessionJoin(req, resp); });
+
+    CROW_ROUTE(m_app, "/api/session/chunk").methods("GET"_method)
+    ([this](const crow::request &req, crow::response &resp){ sessionChunkGet(req, resp); });
+
+    CROW_ROUTE(m_app, "/api/session/chunk").methods("POST"_method)
+    ([this](const crow::request &req, crow::response &resp){ sessionChunkPost(req, resp); });
 }
 
 void WebAPI::currentStatistics(const crow::request &req, crow::response &res)
@@ -497,6 +503,152 @@ void WebAPI::sessionJoin(const crow::request &req, crow::response &res)
     res.end();
 }
 
+void WebAPI::sessionChunkPost(const crow::request &req, crow::response &res)
+{
+    auto& cookieCtx = m_app.get_context<crow::CookieParser>(req);
+    const auto token = cookieCtx.get_cookie(CLIENT_ID_TOKEN);
+    if (token.empty())
+    {
+        res.code = 401;
+        res.body = "You have not been identified";
+        res.end();
+        return;
+    }
+
+    const auto client = ClientList::instanse().get(token);
+    if (client == nullptr)
+    {
+        res.code = 401;
+        res.body = "You have not been identified";
+        res.end();
+        return;
+    }
+
+    const auto sessionId = client->joinedSession();
+    if (sessionId.empty())
+    {
+        res.code = 400;
+        res.body = "You are not connected to the transfer session";
+        res.end();
+        return;
+    }
+
+    auto session = TransferSessionList::instanse().get(sessionId);
+    if (session.first == nullptr)
+    {
+        // 500 because when the session is deleted, the client must also be deleted
+        res.code = 500;
+        res.body = "Session not found";
+        res.end();
+        return;
+    }
+
+    const auto spSender = session.first->sender().lock();
+    if (spSender == nullptr or spSender->id() != client->id())
+    {
+        res.code = 403;
+        res.body = "Only the session creator can send data";
+        res.end();
+        return;
+    }
+
+    const auto body = req.body;
+    if (body.size() > Config::instance().transferSessionMaxChunkSize())
+    {
+        res.code = 400;
+        res.body = "The data size exceeds the maximum allowed chunk size";
+        res.end();
+        return;
+    }
+
+    if (not session.first->addChunk(body))
+    {
+        res.code = 421;
+        res.body = "Adding a chunk failed";
+        res.end();
+        return;
+    }
+
+    res.code = 202;
+    res.end();
+    return;
+}
+
+void WebAPI::sessionChunkGet(const crow::request &req, crow::response &res)
+{
+    auto& cookieCtx = m_app.get_context<crow::CookieParser>(req);
+    const auto token = cookieCtx.get_cookie(CLIENT_ID_TOKEN);
+    if (token.empty())
+    {
+        res.code = 401;
+        res.body = "You have not been identified";
+        res.end();
+        return;
+    }
+
+    const auto client = ClientList::instanse().get(token);
+    if (client == nullptr)
+    {
+        res.code = 401;
+        res.body = "You have not been identified";
+        res.end();
+        return;
+    }
+
+    const auto sessionId = client->joinedSession();
+    if (sessionId.empty())
+    {
+        res.code = 400;
+        res.body = "You are not connected to the transfer session";
+        res.end();
+        return;
+    }
+
+    auto session = TransferSessionList::instanse().get(sessionId);
+    if (session.first == nullptr)
+    {
+        // 500 because when the session is deleted, the client must also be deleted
+        res.code = 500;
+        res.body = "Session not found";
+        res.end();
+        return;
+    }
+
+    const auto chunkIdParam = req.url_params.get("id");
+    if (chunkIdParam == nullptr)
+    {
+        res.code = 400;
+        res.body = "You need to send the chunk ID";
+        res.end();
+        return;
+    }
+
+    size_t index = 0;
+    try {
+        index = std::stoul(chunkIdParam);
+    } catch (...) {
+        res.code = 400;
+        res.body = "You need to send the chunk ID as a number";
+        res.end();
+        return;
+    }
+
+    const auto chunk = session.first->getChunk(index, client);
+    if (chunk == nullptr)
+    {
+        res.code = 404;
+        res.body = "Chunk not found";
+        res.end();
+        return;
+    }
+
+    res.code = 200;
+    res.set_header("Content-Type", "application/octet-stream");
+    res.body = std::string(chunk->begin(), chunk->end());
+    res.end();
+    return;
+}
+
 bool WebAPI::wsOnAccept(const crow::request &req, void **userdata)
 {
     auto& cookieCtx = m_app.get_context<crow::CookieParser>(req);
@@ -515,6 +667,12 @@ bool WebAPI::wsOnAccept(const crow::request &req, void **userdata)
     if (client->joinedSession().empty())
     {
         return false;
+    }
+
+    if (client->online())
+    {
+        // Only one active connection per user is allowed
+        client->dropCurrentWsConnection();
     }
 
     const bool sessExists = TransferSessionList::instanse()
