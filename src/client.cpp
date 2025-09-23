@@ -15,6 +15,7 @@ Client::Client(const std::string &id, asio::io_context& ioContext, std::function
     m_publicId(skaptcha_tools::crypto::HashSignature::instance().sign(m_id)),
     m_timeoutTimer(ioContext, onTimeout, TimerCallback::Duration(Config::instance().clientTimeout()))
 {
+    std::cerr << "Client " << m_id << " created" << std::endl; // DEBUG
     m_timeoutTimer.start();
 }
 
@@ -121,6 +122,7 @@ void Client::update(Event::TransferSession event, std::any data)
 {
     if (event == Event::TransferSession::newReceiver)
     {
+        std::cout << "New receiver event for " << m_id << std::endl;
         try {
             std::shared_ptr<Client> client = std::any_cast<std::shared_ptr<Client>>(data);
             if (client == nullptr)
@@ -310,12 +312,14 @@ void Client::update(Event::TransferSessionForSender event, std::any data)
 
 Client::~Client()
 {
+    std::cerr << "~Client " << m_id << " destructing" << std::endl; // DEBUG
     Publisher<Event::ClientInternal>::notifySubscribers(Event::ClientInternal::destroyed, m_publicId);
 
     if (auto sp = m_webSocketConnection.lock())
     {
         sp->close();
     }
+    std::cerr << "~Client " << m_id << " destructed" << std::endl; // DEBUG
 }
 
 std::string Client::name() const

@@ -13,6 +13,11 @@ TimerCallback::TimerCallback(TimerCallback &&another) noexcept
 {
 }
 
+TimerCallback::~TimerCallback()
+{
+    stop();
+}
+
 void TimerCallback::start()
 {
     if (m_isRunning.exchange(true))

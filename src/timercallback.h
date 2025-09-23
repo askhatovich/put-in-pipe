@@ -23,6 +23,7 @@ public:
                   , m_isRunning(false) {}
 
     TimerCallback(TimerCallback&& another) noexcept;
+    ~TimerCallback();
 
     void start();
     void stop();

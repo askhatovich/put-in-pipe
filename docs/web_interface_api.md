@@ -189,7 +189,7 @@ It is recommended to use these methods.
 Request to download the chunk.
 
 ```
-GET /api/session/chunk
+GET /api/session/chunk?id=NUMBER
 ```
 
 | Code | Body | Means |
@@ -232,7 +232,7 @@ Immediately after connection, the server sends the information necessary to init
 ```
 {
   "event": "start_init",
-  {
+  "data": {
     "session_id": "FpXC3S1Mf8nV8hhBWzaQc9Fb3XEhFgKxaMJ9ZDDGXME",
     "transferred": {
       "global": {
@@ -431,7 +431,18 @@ The event indicates the start of the download and the finish when the receiver e
 }
 ```
 
-#### E2.8 The initial freezing of chunks has been reset
+#### E2.8 The amount of data received
+
+```
+{
+  "event": "personal_received",
+  "data": {
+    "bytes": 329273538
+  }
+}
+```
+
+#### E2.9 The initial freezing of chunks has been reset
 
 ```
 {
@@ -440,7 +451,7 @@ The event indicates the start of the download and the finish when the receiver e
 }
 ```
 
-#### E2.9 The file upload is completed
+#### E2.10 The file upload is completed
 
 After this event, new chunks cannot be created.
 
@@ -451,7 +462,7 @@ After this event, new chunks cannot be created.
 }
 ```
 
-#### E2.10 The session is over
+#### E2.11 The session is over
 
 ```
 {
@@ -466,10 +477,10 @@ Possible statuses:
 - `ok` - Normal completion;
 - `timeout` - The session was deleted due to timeout;
 - `sender_is_gone` - The sender left the line;
-- `receivers_is_gone` - The receivers are gone;
+- `no_receivers` - The receivers are gone (or never connected);
 - `error` - Another error.
 
-#### E2.11 The option to upload a new chunk is available
+#### E2.12 The option to upload a new chunk is available
 
 The event is only for the session creator. Notifies that the new chunk is available for upload. If it is not allowed, it means that the buffer is full.
 

@@ -42,7 +42,7 @@ enum class TransferSessionCompleteType
     ok,
     timeout,
     senderIsGone,
-    receiversIsGone
+    noReceivers
 };
 
 struct TransferSessionDownloadInfo
@@ -65,8 +65,10 @@ public:
         static constexpr uint8_t NAME_MAX_LENGTH = 255;
 
         std::string name;
-        size_t size;
+        size_t size = 0;
     };
+
+    void initTimers(std::shared_ptr<TransferSession> me);
 
     std::string id() const { return m_id; }
 
@@ -113,7 +115,8 @@ private:
     FileInfo m_fileInfo;
     TransferSessionDetails::Buffer m_buffer;
     mutable std::shared_mutex m_receiversMutex;
-    TimerCallback m_initialFreezeTimer;
+    std::unique_ptr<TimerCallback> m_initialFreezeTimer = nullptr;
+    asio::io_context& m_ioContext;
 
     Event::Data::TransferSessionCompleteType m_completeType = Event::Data::TransferSessionCompleteType::ok;
 };

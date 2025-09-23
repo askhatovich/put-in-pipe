@@ -5,43 +5,55 @@
 #include "websocketconnection.h"
 #include "client.h"
 
+WebSocketConnection::~WebSocketConnection()
+{
+    std::cout << "~WebSocketConnection()" << std::endl; // DEBUG
+    // if (auto sp = m_client.lock())
+    // {
+    //     sp->onWebSocketDisconnected();
+    // }
+}
+
 void WebSocketConnection::sendText(const std::string &string)
 {
-    if (connection)
+    if (!m_connection)
     {
-        connection->send_text(string);
+        std::cerr << "WebSocketConnection::sendText: connection is nullptr" << std::endl;
+        return;
     }
+    m_connection->send_text(string);
 }
 
 void WebSocketConnection::sendBinary(const std::string &binary)
 {
-    if (connection)
+    if (!m_connection)
     {
-        connection->send_binary(binary);
+        std::cerr << "WebSocketConnection::sendBinary: connection is nullptr" << std::endl;
+        return;
     }
+    m_connection->send_binary(binary);
 }
 
 void WebSocketConnection::close()
 {
-    if (connection)
+    if (!m_connection)
     {
-        connection->close();
+        std::cerr << "WebSocketConnection::close: connection is nullptr" << std::endl;
+        return;
     }
+    m_connection->close();
 }
 
 WebSocketConnectionDetails::WebSocketConnectionRAIIWrapper::~WebSocketConnectionRAIIWrapper()
 {
-    if (auto sp = ws->client.lock())
-    {
-        sp->onWebSocketDisconnected();
-    }
+    std::cout << "~WebSocketConnectionRAIIWrapper()" << std::endl; // DEBUG
 }
 
 void WebSocketConnectionDetails::WebSocketConnectionRAIIWrapper::setConnection(crow::websocket::connection &conn)
 {
-    ws->connection = &conn;
+    ws->m_connection = &conn;
 
-    if (auto sp = ws->client.lock())
+    if (auto sp = ws->m_client.lock())
     {
         sp->onWebSocketConnected(ws);
     }

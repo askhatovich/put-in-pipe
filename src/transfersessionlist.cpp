@@ -40,6 +40,7 @@ TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_p
     }
 
     auto session = createSubscriber<TransferSession>(creator, id, m_ioContext);
+    session->initTimers(session);
 
     session->Publisher<Event::TransferSession>::addSubscriber(creator);
     session->Publisher<Event::TransferSessionForSender>::addSubscriber(creator);

@@ -36,7 +36,6 @@ std::shared_ptr<SubscriberType> createSubscriber(Args&&... args)
 }
 
 
-
 template<typename EventType>
 class Publisher
 {
@@ -94,7 +93,7 @@ public:
                                    return true;
                                }),
                 m_subscribers.end()
-                );
+            );
         }
 
         for (auto& subscriber : validSubcribers)
@@ -103,7 +102,7 @@ public:
         }
     }
 
-    size_t countObservers() const
+    size_t countSubscribers() const
     {
         std::shared_lock lock(m_mutex);
 

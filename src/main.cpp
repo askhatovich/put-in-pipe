@@ -11,9 +11,9 @@ int main()
     auto& cfg = Config::instance();
     cfg.setBindAddress("0.0.0.0");
     cfg.setBindPort(2233);
-    cfg.setApiMaxClientCount(50);
+    cfg.setApiMaxClientCount(500);
     cfg.setApiCaptchaLifetime(60*3);
-    cfg.setApiWithoutCaptchaThreshold(0);
+    cfg.setApiWithoutCaptchaThreshold(500);
     cfg.setClientTimeout(60);
     cfg.setTransferSessionMaxChunkSize(1024*1024*5);
     cfg.setTransferSessionChunkQueueMaxSize(10);

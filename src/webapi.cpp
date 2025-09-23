@@ -29,6 +29,8 @@ void WebAPI::run()
 
 void WebAPI::initRoutes()
 {
+    m_app.loglevel(crow::LogLevel::Warning);
+
     CROW_ROUTE(m_app, "/").methods("GET"_method)
     ([](const crow::request& req, crow::response& resp) {
         resp.set_header("Content-Type", "text/plain; charset=utf-8");
@@ -700,6 +702,9 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
 
     wsWrapperPtr->setConnection(conn);
 
+    std::cerr << "wsOnConnect " << client->id() << std::endl; // DEBUG
+
+
     const auto session = TransferSessionList::instanse().get(client->joinedSession());
     if (session.first == nullptr)
     {
@@ -730,7 +735,7 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
     {
         /*
          * The sender can disconnect and it will not be
-         * a logical error if the file has aelready been fully uploaded.
+         * a logical error if the file has already been fully uploaded.
          */
 
         senderInfo["id"] = sender->publicId();
@@ -795,12 +800,23 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
 
 void WebAPI::wsOnClose(crow::websocket::connection &conn, const std::string& /*reason*/, uint16_t /*code*/)
 {
+    if (conn.userdata() == nullptr) return;
+
+    static std::mutex mutex;
+    std::lock_guard guard(mutex);
+
+    // double check
+    if (conn.userdata() == nullptr) return;
+
     auto wsWrapperPtr = static_cast<WsRaiiWrapper*>(conn.userdata());
     delete wsWrapperPtr;
+    conn.userdata(nullptr);
 }
 
 void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &data, bool isBinary)
 {
+    std::cerr << "WS " << isBinary << " " << data << std::endl; // DEBUG
+
     auto wsWrapperPtr = static_cast<WsRaiiWrapper*>(conn.userdata());
     auto client = wsWrapperPtr->client().lock();
     if (client == nullptr)
@@ -918,6 +934,8 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
      * Exception handling is not needed here, it is available at a higher level.
      * Any exception is an invalid request.
      */
+
+    std::cerr << "WS internalWsMessageProcessing: " << action << std::endl; // DEBUG
 
     if (action == "set_file_info") // creator only
     {

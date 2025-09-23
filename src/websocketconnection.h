@@ -16,16 +16,18 @@ class WebSocketConnection
 {
     friend WebSocketConnectionDetails::WebSocketConnectionRAIIWrapper;
 public:
+    ~WebSocketConnection();
+
     void sendText(const std::string& string);
     void sendBinary(const std::string& binary);
     void close();
 
 private:
     WebSocketConnection(std::shared_ptr<Client> с)
-        : client(с) {}
+        : m_client(с) {}
 
-    crow::websocket::connection* connection = nullptr;
-    std::weak_ptr<Client> client;
+    crow::websocket::connection* m_connection = nullptr;
+    std::weak_ptr<Client> m_client;
 };
 
 namespace WebSocketConnectionDetails {
@@ -36,12 +38,14 @@ struct WebSocketConnectionRAIIWrapper
 {
     WebSocketConnectionRAIIWrapper(std::shared_ptr<Client> client)
         : ws(new WebSocketConnection(client))
-    {}
+    {
+        std::cout << "WebSocketConnectionRAIIWrapper()" << std::endl; // DEBUG
+    }
     ~WebSocketConnectionRAIIWrapper();
 
     std::shared_ptr<WebSocketConnection> ws;
 
-    std::weak_ptr<Client> client() { return ws->client; }
+    std::weak_ptr<Client> client() { return ws->m_client; }
     void setConnection(crow::websocket::connection& conn);
 };
 } // namespace WebSocketConnectionDetails

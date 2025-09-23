@@ -137,7 +137,7 @@ std::string SerializableEvent::SessionComplete::json() const
         {"data", {
             {"status", type == t::ok ? "ok" : type == t::timeout ? "timeout" :
                        type == t::senderIsGone ? "sender_is_gone" :
-                       type == t::receiversIsGone ? "receivers_is_gone" : "error"}
+                       type == t::noReceivers ? "no_receivers" : "error"}
          }}
     };
 

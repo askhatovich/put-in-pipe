@@ -72,8 +72,8 @@ public:
     void incrementReceived(size_t bytes);
     void setName(const std::string& name);
 
-    void onWebSocketDisconnected();
     void onWebSocketConnected(std::shared_ptr<WebSocketConnection> connection);
+    void onWebSocketDisconnected();
 
     std::string joinedSession() const;
     bool joinSession(const std::string& id);

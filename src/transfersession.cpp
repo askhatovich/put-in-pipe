@@ -7,7 +7,6 @@
 #include "clientlist.h"
 #include "crowlib/crow/utility.h"
 #include "config/config.h"
-#include "chunk.h"
 
 #include <iostream>
 #include <mutex>
@@ -15,15 +14,15 @@
 TransferSession::TransferSession(std::shared_ptr<Client> sender, const std::string& sessionId, asio::io_context& ioContext)
     : m_id(sessionId)
     , m_dataSender(sender)
-    , m_initialFreezeTimer(ioContext,
-                           [this](){ dropInitialChunksFreeze(); },
-                           TimerCallback::Duration(Config::instance().transferSessionMaxInitialFreezeDuration()))
+    , m_ioContext(ioContext)
 {
-    m_initialFreezeTimer.start();
+    std::cerr << "Session " << sessionId << " created" << std::endl; // DEBUG
 }
 
 TransferSession::~TransferSession()
 {
+    std::cerr << "~Session " << m_id << " destructing..." << std::endl; // DEBUG
+
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::complete, m_completeType);
 
     for (auto& receiver: m_dataReceivers)
@@ -38,6 +37,24 @@ TransferSession::~TransferSession()
     {
         ClientList::instanse().remove(sp->id());
     }
+
+    std::cerr << "~Session " << m_id << " destructed" << std::endl; // DEBUG
+}
+
+void TransferSession::initTimers(std::shared_ptr<TransferSession> me)
+{
+    std::weak_ptr<TransferSession> weakSelf = me;
+    m_initialFreezeTimer = std::make_unique<TimerCallback>(m_ioContext,
+                     [weakSelf]() {
+                        if (auto sharedSelf = weakSelf.lock()) {
+                            sharedSelf->dropInitialChunksFreeze();
+                        }
+                     },
+                    TimerCallback::Duration(Config::instance().transferSessionMaxInitialFreezeDuration()));
+
+    m_initialFreezeTimer->start();
+
+    std::cerr << "Session " << m_id << " initTimers() called" << std::endl; // DEBUG
 }
 
 const TransferSession::FileInfo TransferSession::fileInfo() const
@@ -125,7 +142,7 @@ void TransferSession::removeReceiver(const std::string &publicId)
          * because the initial part of the file has already been lost.
          */
 
-        m_completeType = Event::Data::TransferSessionCompleteType::receiversIsGone;
+        m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
         TransferSessionList::instanse().remove(m_id);
         return;
     }
@@ -288,7 +305,7 @@ void TransferSession::dropInitialChunksFreeze()
     std::shared_lock lock (m_receiversMutex);
     if (m_dataReceivers.empty())
     {
-        m_completeType = Event::Data::TransferSessionCompleteType::receiversIsGone;
+        m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
         TransferSessionList::instanse().remove(m_id);
         return;
     }
@@ -304,7 +321,9 @@ void TransferSession::dropInitialChunksFreeze()
 
 std::chrono::seconds TransferSession::remainingUntilAutoDropInitialFreeze() const
 {
-    return m_initialFreezeTimer.timeRemaining();
+    if (m_initialFreezeTimer == nullptr) return std::chrono::seconds(0);
+
+    return m_initialFreezeTimer->timeRemaining();
 }
 
 void TransferSession::update(Event::ClientInternal event, std::any data)

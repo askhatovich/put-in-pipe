@@ -198,6 +198,7 @@ namespace crow
         UNSUPPORTED_MEDIA_TYPE        = 415,
         RANGE_NOT_SATISFIABLE         = 416,
         EXPECTATION_FAILED            = 417,
+        MISDIRECTED_REQUEST           = 421,
         PRECONDITION_REQUIRED         = 428,
         TOO_MANY_REQUESTS             = 429,
         UNAVAILABLE_FOR_LEGAL_REASONS = 451,

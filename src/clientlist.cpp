@@ -54,7 +54,7 @@ std::shared_ptr<Client> ClientList::create(const std::string &token)
         return nullptr;
     }
 
-    auto client = createSubscriber<Client>(token, m_ioContext, [&, token](){ this->remove(token); });
+    auto client = createSubscriber<Client>(token, m_ioContext, [&, token](){ std::cout << "Client timeout" << std::endl /*DEBUG*/; this->remove(token); });
 
     m_map[token] = client;
 
