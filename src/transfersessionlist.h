@@ -37,14 +37,10 @@ private:
     TransferSessionList(TransferSessionList&&) = delete;
     TransferSessionList& operator=(const TransferSessionList&) = delete;
 
-    void removeDueTimeout(const std::string& id);
-
     struct SessionWithTimer
     {
         SessionWithTimer(std::shared_ptr<TransferSession> s, TimerCallback&& t)
             : session(s), timer(std::move(t)) {}
-        SessionWithTimer(SessionWithTimer && another) noexcept
-            : session(another.session), timer(std::move(another.timer)) {}
 
         std::shared_ptr<TransferSession> session = nullptr;
         TimerCallback timer;

@@ -46,19 +46,29 @@ TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_p
     session->Publisher<Event::TransferSessionForSender>::addSubscriber(creator);
     creator->Publisher<Event::ClientInternal>::addSubscriber(session);
 
-    TimerCallback timer(m_ioContext,
-                        [this, id](){ removeDueTimeout(id); },
-                        TimerCallback::Duration(Config::instance().transferSessionMaxLifetime()));
-    timer.start();
-
-    // returned value ignored because id already is checked to be unique
-    m_map.try_emplace(
+    auto [iter, _] = m_map.try_emplace(
         id,
         SessionWithTimer {
             session,
-            std::move(timer)
+            {
+                m_ioContext,
+                [this, session, id](){
+                    session->setTimedout();
+                    this->remove(id);
+                },
+                TimerCallback::Duration(Config::instance().transferSessionMaxLifetime())
+            }
         }
     );
+
+    if (iter == m_map.end())
+    {
+        std::cerr << "TransferSessionList::create - invalid iterator" << std::endl;
+        return {nullptr, 0};
+    }
+
+    auto &timer = iter->second.timer;
+    timer.start();
 
     return {session, timer.timeRemaining().count()};
 }
@@ -115,16 +125,3 @@ TransferSessionList::TransferSessionList()
         m_ioContext.run();
     });
 }
-
-void TransferSessionList::removeDueTimeout(const std::string &id)
-{
-    std::unique_lock lock (m_mutex);
-
-    auto iter = m_map.find(id);
-    if (iter == m_map.end()) return;
-
-    iter->second.session->setTimedout();
-
-    m_map.erase(iter);
-}
-

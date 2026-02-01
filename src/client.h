@@ -77,7 +77,7 @@ public:
 
     std::string joinedSession() const;
     bool joinSession(const std::string& id);
-    void resetTimeoutTimerIfItActive();
+    void resetWsTimeoutTimerIfItActive();
 
     // Subscriber interface
     void update(Event::ClientDirect event, std::any data) override;
@@ -97,5 +97,5 @@ private:
     size_t m_currentChunkIndex = 0;
     std::atomic<size_t> m_bytesReceived = 0;
     mutable std::shared_mutex m_mutex;
-    TimerCallback m_timeoutTimer;
+    TimerCallback m_wsTimeoutTimer;
 };

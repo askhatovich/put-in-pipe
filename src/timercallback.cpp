@@ -9,7 +9,7 @@ TimerCallback::TimerCallback(TimerCallback &&another) noexcept
     , m_callback(std::move(another.m_callback))
     , m_duration(std::move(another.m_duration))
     , m_startTime(std::move(another.m_startTime))
-    , m_isRunning(another.m_isRunning.load())
+    , m_isRunning(another.m_isRunning.exchange(false))
 {
 }
 

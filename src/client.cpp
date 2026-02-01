@@ -13,10 +13,10 @@
 Client::Client(const std::string &id, asio::io_context& ioContext, std::function<void()> onTimeout) :
     m_id(id),
     m_publicId(skaptcha_tools::crypto::HashSignature::instance().sign(m_id)),
-    m_timeoutTimer(ioContext, onTimeout, TimerCallback::Duration(Config::instance().clientTimeout()))
+    m_wsTimeoutTimer(ioContext, onTimeout, TimerCallback::Duration(Config::instance().clientTimeout()))
 {
     std::cerr << "Client " << m_id << " created" << std::endl; // DEBUG
-    m_timeoutTimer.start();
+    m_wsTimeoutTimer.start();
 }
 
 void Client::onWebSocketDisconnected()
@@ -24,7 +24,7 @@ void Client::onWebSocketDisconnected()
     std::unique_lock lock (m_mutex);
 
     m_webSocketConnection.reset();
-    m_timeoutTimer.start();
+    m_wsTimeoutTimer.start();
 
     Publisher<Event::ClientDirect>::notifySubscribers(Event::ClientDirect::disconnected, m_publicId);
 }
@@ -34,7 +34,7 @@ void Client::onWebSocketConnected(std::shared_ptr<WebSocketConnection> connectio
     std::unique_lock lock (m_mutex);
 
     m_webSocketConnection = connection;
-    m_timeoutTimer.stop();
+    m_wsTimeoutTimer.stop();
 
     Publisher<Event::ClientDirect>::notifySubscribers(Event::ClientDirect::connected, m_publicId);
 }
@@ -58,13 +58,13 @@ bool Client::joinSession(const std::string &id)
     return true;
 }
 
-void Client::resetTimeoutTimerIfItActive()
+void Client::resetWsTimeoutTimerIfItActive()
 {
     std::unique_lock lock (m_mutex);
 
-    if (m_timeoutTimer.isRunning())
+    if (m_wsTimeoutTimer.isRunning())
     {
-        m_timeoutTimer.restart();
+        m_wsTimeoutTimer.restart();
     }
 }
 
@@ -331,7 +331,7 @@ std::string Client::name() const
 bool Client::online() const
 {
     std::shared_lock lock (m_mutex);
-    return not m_timeoutTimer.isRunning();
+    return not m_wsTimeoutTimer.isRunning();
 }
 
 void Client::dropCurrentWsConnection()

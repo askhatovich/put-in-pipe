@@ -359,7 +359,7 @@ void WebAPI::sessionCreate(const crow::request &req, crow::response &res)
     if (not TransferSessionList::instanse().possibleToCreateNew())
     {
         res.code = 503;
-        client->resetTimeoutTimerIfItActive();
+        client->resetWsTimeoutTimerIfItActive();
         res.body = "The maximum number of sessions has been reached, please try again later";
         res.end();
         return;
