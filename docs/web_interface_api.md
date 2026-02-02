@@ -587,7 +587,7 @@ The name must be in UTF-8 format. The length of the name is automatically shorte
 {
   "action": "get_chunk",
   "data": {
-    "id": 78
+    "index": 78
   }
 }
 ```
@@ -621,7 +621,7 @@ A chunk is considered received only after explicit confirmation. When a chunk is
 {
   "action": "confirm_chunk",
   "data": {
-    "id": 81
+    "index": 81
   }
 }
 ```

@@ -1002,7 +1002,7 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     }
     else if (action == "get_chunk")
     {
-        const size_t chunkId = data["id"].u();
+        const size_t chunkId = data["index"].u();
         const auto data = session->getChunk(chunkId, client);
         if (data == nullptr)
         {
@@ -1015,7 +1015,7 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     }
     else if (action == "confirm_chunk")
     {
-        const size_t chunkId = data["id"].u();
+        const size_t chunkId = data["index"].u();
         session->setChunkAsReceived(chunkId, client);
     }
     else

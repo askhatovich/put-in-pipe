@@ -45,10 +45,6 @@ size_t Buffer::addChunk(const std::string &binaryData)
 
     if (inserted)
     {
-        /*
-         * Config::instance().apiEveryChunkOverhead() is ignored because it is a shared counter,
-         * not a personal one for drawing progress bars.
-         */
         m_bytesInTotal += binaryData.size();
     }
     else
