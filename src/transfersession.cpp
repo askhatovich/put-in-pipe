@@ -96,12 +96,14 @@ bool TransferSession::addReceiver(std::shared_ptr<Client> client)
                 continue;
             }
 
-            client->Publisher<Event::ClientDirect>::addSubscriber(spAnotherReceiver);
-            spAnotherReceiver->Publisher<Event::ClientDirect>::addSubscriber(client);
+            client->Publisher<Event::ClientsDirect>::addSubscriber(spAnotherReceiver);
+            spAnotherReceiver->Publisher<Event::ClientsDirect>::addSubscriber(client);
         }
     }
 
     m_dataReceivers.push_back(client);
+
+    client->Publisher<Event::ClientInternal>::addSubscriber(shared_from_this());
 
     Publisher<Event::TransferSession>::addSubscriber(client);
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::newReceiver, client);
@@ -111,6 +113,7 @@ bool TransferSession::addReceiver(std::shared_ptr<Client> client)
 
 void TransferSession::removeReceiver(const std::string &publicId)
 {
+    std::cout << "TransferSession::removeReceiver 1 " << publicId << std::endl; // DEBUG
     std::unique_lock lock (m_receiversMutex);
 
     /*
@@ -130,6 +133,7 @@ void TransferSession::removeReceiver(const std::string &publicId)
 
             m_dataReceivers.erase(iter);
             ClientList::instanse().remove(spReceiver->id());
+            std::cout << "TransferSession::removeReceiver 2 " << publicId << std::endl; // DEBUG
 
             break; // no any job after iter erase!
         }

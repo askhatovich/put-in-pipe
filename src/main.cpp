@@ -18,7 +18,7 @@ int main()
     cfg.setTransferSessionMaxChunkSize(1024*1024*5);
     cfg.setTransferSessionChunkQueueMaxSize(10);
     cfg.setTransferSessionCountLimit(100);
-    cfg.setTransferSessionMaxLifetime(60*60*2);
+    cfg.setTransferSessionMaxLifetime(10);
     cfg.setTransferSessionMaxConsumerCount(5);
     cfg.setTransferSessionMaxInitialFreezeDuration(60*2);
 

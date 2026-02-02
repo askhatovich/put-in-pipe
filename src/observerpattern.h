@@ -85,13 +85,13 @@ public:
 
             m_subscribers.erase(
                 std::remove_if(m_subscribers.begin(), m_subscribers.end(),
-                               [&validSubcribers](const std::weak_ptr<Subscriber<EventType>>& wp) {
-                                   if (auto sp = wp.lock()) {
-                                       validSubcribers.push_back(sp);
-                                       return false;
-                                   }
-                                   return true;
-                               }),
+                                [&validSubcribers](const std::weak_ptr<Subscriber<EventType>>& wp) {
+                                    if (auto sp = wp.lock()) {
+                                        validSubcribers.push_back(sp);
+                                        return false;
+                                    }
+                                    return true;
+                                }),
                 m_subscribers.end()
             );
         }

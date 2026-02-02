@@ -21,22 +21,24 @@ Client::Client(const std::string &id, asio::io_context& ioContext, std::function
 
 void Client::onWebSocketDisconnected()
 {
-    std::unique_lock lock (m_mutex);
+    {
+        std::unique_lock lock (m_mutex);
+        m_webSocketConnection.reset();
+        m_wsTimeoutTimer.start();
+    }
 
-    m_webSocketConnection.reset();
-    m_wsTimeoutTimer.start();
-
-    Publisher<Event::ClientDirect>::notifySubscribers(Event::ClientDirect::disconnected, m_publicId);
+    Publisher<Event::ClientsDirect>::notifySubscribers(Event::ClientsDirect::disconnected, m_publicId);
 }
 
 void Client::onWebSocketConnected(std::shared_ptr<WebSocketConnection> connection)
 {
-    std::unique_lock lock (m_mutex);
+    {
+        std::unique_lock lock (m_mutex);
+        m_webSocketConnection = connection;
+        m_wsTimeoutTimer.stop();
+    }
 
-    m_webSocketConnection = connection;
-    m_wsTimeoutTimer.stop();
-
-    Publisher<Event::ClientDirect>::notifySubscribers(Event::ClientDirect::connected, m_publicId);
+    Publisher<Event::ClientsDirect>::notifySubscribers(Event::ClientsDirect::connected, m_publicId);
 }
 
 std::string Client::joinedSession() const
@@ -47,7 +49,7 @@ std::string Client::joinedSession() const
 
 bool Client::joinSession(const std::string &id)
 {
-    if (id.empty()) return false; // ???
+    if (id.empty()) return false;
 
     std::shared_lock lock (m_mutex);
     if (not m_joinedSession.empty())
@@ -68,9 +70,9 @@ void Client::resetWsTimeoutTimerIfItActive()
     }
 }
 
-void Client::update(Event::ClientDirect event, std::any data)
+void Client::update(Event::ClientsDirect event, std::any data)
 {
-    if (event == Event::ClientDirect::connected)
+    if (event == Event::ClientsDirect::connected)
     {
         try {
             const std::string publicId = std::any_cast<std::string>(data);
@@ -79,12 +81,12 @@ void Client::update(Event::ClientDirect event, std::any data)
                 sp->sendText( SerializableEvent::Online{publicId, true}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::ClientDirect::connected "
+            std::cerr << "Client::update - Event::ClientsDirect::connected "
                          "- expected std::string: " << e.what() << std::endl;
         }
         return;
     }
-    else if (event == Event::ClientDirect::disconnected)
+    else if (event == Event::ClientsDirect::disconnected)
     {
         try {
             const std::string publicId = std::any_cast<std::string>(data);
@@ -93,12 +95,12 @@ void Client::update(Event::ClientDirect event, std::any data)
                 sp->sendText( SerializableEvent::Online{publicId, false}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::ClientDirect::disconnected "
+            std::cerr << "Client::update - Event::ClientsDirect::disconnected "
                          "- expected std::string: " << e.what() << std::endl;
         }
         return;
     }
-    else if (event == Event::ClientDirect::nameChanged)
+    else if (event == Event::ClientsDirect::nameChanged)
     {
         try {
             const Event::Data::NameInfo nameInfo = std::any_cast<Event::Data::NameInfo>(data);
@@ -107,14 +109,14 @@ void Client::update(Event::ClientDirect event, std::any data)
                 sp->sendText( SerializableEvent::NameChanged{nameInfo.publicId, nameInfo.name}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::ClientDirect::nameChanged "
+            std::cerr << "Client::update - Event::ClientsDirect::nameChanged "
                          "- expected Event::Data::NameInfo: " << e.what() << std::endl;
         }
         return;
     }
     else
     {
-        std::cerr << "Client::update(Event::ClientDirect) unknown event" << std::endl;
+        std::cerr << "Client::update(Event::ClientsDirect) unknown event" << std::endl;
     }
 }
 
@@ -234,7 +236,7 @@ void Client::update(Event::TransferSession event, std::any data)
     }
     else if (event == Event::TransferSession::complete)
     {
-        try {
+         try {
             const auto type = std::any_cast<Event::Data::TransferSessionCompleteType>(data);
             if (auto sp = m_webSocketConnection.lock())
             {
@@ -312,14 +314,15 @@ void Client::update(Event::TransferSessionForSender event, std::any data)
 
 Client::~Client()
 {
-    std::cerr << "~Client " << m_id << " destructing" << std::endl; // DEBUG
+    std::cerr << "~Client " << m_publicId << " destructing" << std::endl; // DEBUG
     Publisher<Event::ClientInternal>::notifySubscribers(Event::ClientInternal::destroyed, m_publicId);
 
     if (auto sp = m_webSocketConnection.lock())
     {
         sp->close();
+        std::cerr << "~Client ws connection close()" << std::endl; // DEBUG
     }
-    std::cerr << "~Client " << m_id << " destructed" << std::endl; // DEBUG
+    std::cerr << "~Client " << m_publicId << " destructed" << std::endl; // DEBUG
 }
 
 std::string Client::name() const
@@ -369,5 +372,5 @@ void Client::setName(const std::string &name)
     info.name = m_name;
     info.publicId = m_publicId;
 
-    Publisher<Event::ClientDirect>::notifySubscribers(Event::ClientDirect::nameChanged, info);
+    Publisher<Event::ClientsDirect>::notifySubscribers(Event::ClientsDirect::nameChanged, info);
 }

@@ -18,7 +18,7 @@ enum class TransferSession;
 enum class TransferSessionSender;
 enum class TransferSessionForSender;
 
-enum class ClientDirect { // direct communication between users
+enum class ClientsDirect { // direct communication between users
 //  Event            Data
     connected,    // publicId
     disconnected, // publicId
@@ -41,9 +41,9 @@ struct NameInfo
 } // namespace Data
 } // namespace Event
 
-class Client : public Publisher<Event::ClientDirect>,
+class Client : public Publisher<Event::ClientsDirect>,
                public Publisher<Event::ClientInternal>,
-               public Subscriber<Event::ClientDirect>,
+               public Subscriber<Event::ClientsDirect>,
                public Subscriber<Event::TransferSession>,
                public Subscriber<Event::TransferSessionForSender>
 {
@@ -80,7 +80,7 @@ public:
     void resetWsTimeoutTimerIfItActive();
 
     // Subscriber interface
-    void update(Event::ClientDirect event, std::any data) override;
+    void update(Event::ClientsDirect event, std::any data) override;
     void update(Event::TransferSession event, std::any data) override;
     void update(Event::TransferSessionForSender event, std::any data) override;
 

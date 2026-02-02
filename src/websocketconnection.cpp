@@ -8,10 +8,10 @@
 WebSocketConnection::~WebSocketConnection()
 {
     std::cout << "~WebSocketConnection()" << std::endl; // DEBUG
-    // if (auto sp = m_client.lock())
-    // {
-    //     sp->onWebSocketDisconnected();
-    // }
+    if (auto sp = m_client.lock())
+    {
+        sp->onWebSocketDisconnected();
+    }
 }
 
 void WebSocketConnection::sendText(const std::string &string)
