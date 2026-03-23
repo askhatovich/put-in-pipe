@@ -28,6 +28,26 @@ add_library(put-in-pipe-core STATIC
     timercallback.cpp
     webapi.cpp
     captcha/token.cpp
+
+    # Headers (for IDE visibility)
+    atomicset.h
+    buffer.h
+    chunk.h
+    client.h
+    clientlist.h
+    log.h
+    observerpattern.h
+    serializableevent.h
+    timercallback.h
+    transfersession.h
+    transfersessionlist.h
+    webapi.h
+    websocketconnection.h
+    config/config.h
+    config/inireader.h
+    captcha/skaptcha.h
+    captcha/skaptcha_tools.h
+    captcha/token.h
 )
 
 target_include_directories(put-in-pipe-core PUBLIC
