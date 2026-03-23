@@ -12,6 +12,24 @@
 #include <cstring>
 #include <algorithm>
 #include <csignal>
+#include <iomanip>
+
+#ifdef __linux__
+  #include <sys/sysinfo.h>
+#elif __APPLE__
+  #include <sys/sysctl.h>
+#endif
+
+static size_t getTotalRAM() {
+#ifdef __linux__
+    struct sysinfo info;
+    if (sysinfo(&info) == 0) return info.totalram * info.mem_unit;
+#elif __APPLE__
+    int64_t mem; size_t len = sizeof(mem);
+    if (sysctlbyname("hw.memsize", &mem, &len, nullptr, 0) == 0) return static_cast<size_t>(mem);
+#endif
+    return 0;
+}
 
 static plog::Severity parseLogLevel(const std::string& str)
 {
@@ -165,6 +183,24 @@ int main(int argc, char* argv[])
     PLOG_INFO << "Config loaded from " << configPath;
     PLOG_INFO << "Log level: " << cfg.logLevel();
     PLOG_INFO << "Listening on " << cfg.bindAddress() << ":" << cfg.bindPort();
+
+    {
+        const size_t maxMem = cfg.transferSessionCountLimit()
+                            * cfg.transferSessionMaxChunkSize()
+                            * cfg.transferSessionChunkQueueMaxSize();
+        const double maxMemMB = static_cast<double>(maxMem) / (1024.0 * 1024.0);
+        PLOG_INFO << "Max memory for chunk buffers: "
+                  << cfg.transferSessionCountLimit() << " sessions * "
+                  << cfg.transferSessionMaxChunkSize() << " bytes/chunk * "
+                  << cfg.transferSessionChunkQueueMaxSize() << " chunks/buffer = "
+                  << std::fixed << std::setprecision(0) << maxMemMB << " MB";
+
+        const size_t totalRAM = getTotalRAM();
+        if (totalRAM > 0 && maxMem > totalRAM) {
+            const double ramMB = static_cast<double>(totalRAM) / (1024.0 * 1024.0);
+            PLOG_WARNING << "Max chunk buffer memory (" << maxMemMB << " MB) exceeds available RAM (" << std::fixed << std::setprecision(0) << ramMB << " MB)";
+        }
+    }
 
     WebAPI webInterface;
 
