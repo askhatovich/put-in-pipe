@@ -1,0 +1,296 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # --- Build frontend (shared artifact) --------------------------------
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          bash embed.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-header
+          path: src/generated_index_html.h
+
+  # --- Debian packages -------------------------------------------------
+  deb:
+    needs: frontend
+    strategy:
+      matrix:
+        include:
+          - distro: debian:12
+            label: debian12
+          - distro: debian:13
+            label: debian13
+          - distro: ubuntu:22.04
+            label: ubuntu2204
+          - distro: ubuntu:24.04
+            label: ubuntu2404
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake g++ dpkg-dev libasio-dev
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-header
+          path: src/
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .deb package
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCH="$(dpkg --print-architecture)"
+          BUILD_DIR="build"
+          STAGE_DIR="$(mktemp -d)"
+
+          cmake -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF \
+            src
+
+          cmake --build "$BUILD_DIR" -j"$(nproc)"
+
+          install -Dm755 "$BUILD_DIR/put-in-pipe"                "$STAGE_DIR/usr/bin/put-in-pipe"
+          install -Dm644 contrib/config.ini.example               "$STAGE_DIR/etc/put-in-pipe/config.ini"
+          install -Dm644 contrib/put-in-pipe.service              "$STAGE_DIR/usr/lib/systemd/system/put-in-pipe.service"
+
+          mkdir -p "$STAGE_DIR/DEBIAN"
+
+          cat > "$STAGE_DIR/DEBIAN/control" <<EOF
+          Package: put-in-pipe
+          Version: $VERSION
+          Architecture: $ARCH
+          Maintainer: Roman Lyubimov
+          Description: Privacy-preserving streaming file transfer server
+           The server acts as an intermediate buffer between a sender and multiple
+           receivers. Files are transferred in chunks without the server storing the
+           complete file on disk. Clients never connect directly to each other,
+           preserving IP-address privacy.
+          Priority: optional
+          Section: net
+          EOF
+          # Remove leading spaces from heredoc (YAML indent)
+          sed -i 's/^          //' "$STAGE_DIR/DEBIAN/control"
+
+          cat > "$STAGE_DIR/DEBIAN/conffiles" <<EOF
+          /etc/put-in-pipe/config.ini
+          EOF
+          sed -i 's/^          //' "$STAGE_DIR/DEBIAN/conffiles"
+
+          cat > "$STAGE_DIR/DEBIAN/postinst" <<'POSTINST'
+          #!/bin/sh
+          set -e
+          if ! getent passwd put-in-pipe >/dev/null 2>&1; then
+              adduser --system --group --no-create-home --home /nonexistent put-in-pipe
+          fi
+          if [ -d /run/systemd/system ]; then
+              systemctl daemon-reload
+          fi
+          POSTINST
+          sed -i 's/^          //' "$STAGE_DIR/DEBIAN/postinst"
+          chmod 755 "$STAGE_DIR/DEBIAN/postinst"
+
+          cat > "$STAGE_DIR/DEBIAN/postrm" <<'POSTRM'
+          #!/bin/sh
+          set -e
+          if [ "$1" = "purge" ]; then
+              if getent passwd put-in-pipe >/dev/null 2>&1; then
+                  deluser --system put-in-pipe || true
+              fi
+              rm -rf /etc/put-in-pipe
+          fi
+          if [ -d /run/systemd/system ]; then
+              systemctl daemon-reload
+          fi
+          POSTRM
+          sed -i 's/^          //' "$STAGE_DIR/DEBIAN/postrm"
+          chmod 755 "$STAGE_DIR/DEBIAN/postrm"
+
+          DEB_NAME="put-in-pipe_${VERSION}_${{ matrix.label }}_${ARCH}.deb"
+          dpkg-deb --root-owner-group --build "$STAGE_DIR" "$DEB_NAME"
+          echo "DEB_NAME=$DEB_NAME" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.label }}
+          path: ${{ env.DEB_NAME }}
+
+  # --- Generic Linux binary (static) ----------------------------------
+  binary:
+    needs: frontend
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: apk add --no-cache build-base cmake linux-headers asio-dev
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-header
+          path: src/
+
+      - name: Build static binary
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static" \
+            src
+          cmake --build build -j"$(nproc)"
+
+      - name: Package tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DIR="put-in-pipe-${VERSION}-linux-amd64"
+          mkdir -p "$DIR"
+          cp build/put-in-pipe "$DIR/"
+          cp contrib/config.ini.example "$DIR/"
+          cp contrib/put-in-pipe.service "$DIR/"
+          tar czf "${DIR}.tar.gz" "$DIR"
+          echo "TARBALL=${DIR}.tar.gz" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-linux-static
+          path: ${{ env.TARBALL }}
+
+  # --- Fedora/RHEL RPM ------------------------------------------------
+  rpm:
+    needs: frontend
+    strategy:
+      matrix:
+        include:
+          - distro: fedora:40
+            label: fedora40
+          - distro: fedora:41
+            label: fedora41
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: dnf install -y gcc-c++ cmake rpm-build asio-devel
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-header
+          path: src/
+
+      - name: Build and package RPM
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCH="$(uname -m)"
+
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF \
+            src
+          cmake --build build -j"$(nproc)"
+
+          STAGE="$(mktemp -d)"
+          install -Dm755 build/put-in-pipe              "$STAGE/usr/bin/put-in-pipe"
+          install -Dm644 contrib/config.ini.example      "$STAGE/etc/put-in-pipe/config.ini"
+          install -Dm644 contrib/put-in-pipe.service     "$STAGE/usr/lib/systemd/system/put-in-pipe.service"
+
+          RPM_NAME="put-in-pipe-${VERSION}-1.${{ matrix.label }}.${ARCH}.rpm"
+
+          # Build RPM with fpm-like approach using rpmbuild
+          mkdir -p ~/rpmbuild/{SPECS,BUILD,RPMS,SOURCES,SRPMS}
+          cat > ~/rpmbuild/SPECS/put-in-pipe.spec <<SPEC
+          Name:    put-in-pipe
+          Version: $VERSION
+          Release: 1%{?dist}
+          Summary: Privacy-preserving streaming file transfer server
+          License: GPL-3.0-or-later
+          URL:     https://github.com/askhatovich/put-in-pipe
+
+          %description
+          The server acts as an intermediate buffer between a sender and multiple
+          receivers. Files are transferred in chunks without the server storing the
+          complete file on disk.
+
+          %install
+          cp -a $STAGE/* %{buildroot}/
+
+          %files
+          /usr/bin/put-in-pipe
+          %config(noreplace) /etc/put-in-pipe/config.ini
+          /usr/lib/systemd/system/put-in-pipe.service
+
+          %pre
+          getent group put-in-pipe >/dev/null || groupadd -r put-in-pipe
+          getent passwd put-in-pipe >/dev/null || useradd -r -g put-in-pipe -s /sbin/nologin -d / put-in-pipe
+
+          %post
+          %systemd_post put-in-pipe.service
+
+          %preun
+          %systemd_preun put-in-pipe.service
+
+          %postun
+          %systemd_postun_with_restart put-in-pipe.service
+          SPEC
+          sed -i 's/^          //' ~/rpmbuild/SPECS/put-in-pipe.spec
+
+          rpmbuild -bb ~/rpmbuild/SPECS/put-in-pipe.spec
+          cp ~/rpmbuild/RPMS/$ARCH/*.rpm "$RPM_NAME"
+          echo "RPM_NAME=$RPM_NAME" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.label }}
+          path: ${{ env.RPM_NAME }}
+
+  # --- Create GitHub Release -------------------------------------------
+  release:
+    needs: [deb, binary, rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.tar.gz

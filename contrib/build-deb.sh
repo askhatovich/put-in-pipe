@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PKG_NAME="put-in-pipe"
-PKG_VERSION="${1:-0.1.0}"
+PKG_VERSION="${1:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo '0.1.0')}"
 PKG_ARCH="$(dpkg --print-architecture)"
 PKG_MAINTAINER="Roman Lyubimov"
 PKG_DESCRIPTION="Privacy-preserving streaming file transfer server"
@@ -14,7 +14,18 @@ STAGE_DIR="$(mktemp -d)"
 
 trap 'rm -rf "$STAGE_DIR"' EXIT
 
-# --- Build -----------------------------------------------------------
+# --- Build frontend --------------------------------------------------
+
+if [ -d "$PROJECT_DIR/web" ] && [ -f "$PROJECT_DIR/web/package.json" ]; then
+    echo "==> Building frontend ..."
+    cd "$PROJECT_DIR/web"
+    npm ci --ignore-scripts
+    npm run build
+    bash embed.sh
+    cd "$PROJECT_DIR"
+fi
+
+# --- Build backend ---------------------------------------------------
 
 echo "==> Building $PKG_NAME $PKG_VERSION ($PKG_ARCH) ..."
 
