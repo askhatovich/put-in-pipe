@@ -71,9 +71,7 @@
         {/if}
 
         {#if uploadFinished}
-            <div class="finished-note">
-                {tt('uploading')} &mdash; {tt('transferComplete').toLowerCase()}
-            </div>
+            <div class="finished-note">{tt('transferComplete')}</div>
         {/if}
     {/if}
 </div>

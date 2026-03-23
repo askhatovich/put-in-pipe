@@ -20,28 +20,34 @@
 </script>
 
 <footer>
-    <span class="copy">Put-In-Pipe &copy; 2025</span>
+    <span class="stats">{statsText()}</span>
+    <span class="copy"><a href="https://github.com/askhatovich/put-in-pipe" target="_blank" rel="noopener">Put-In-Pipe</a> &copy; 2025-2026</span>
     <span class="lang">
         <button class:active={currentLang === 'en'} onclick={() => setLang('en')}>EN</button>
         <span class="sep">|</span>
         <button class:active={currentLang === 'ru'} onclick={() => setLang('ru')}>RU</button>
     </span>
-    <span class="stats">{statsText()}</span>
 </footer>
 
 <style>
     footer {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        justify-content: space-between;
+        gap: 0.15rem;
         padding: 0.5rem 1rem;
         font-size: 0.75rem;
         color: #666;
         font-family: system-ui, -apple-system, sans-serif;
     }
 
-    .copy {
-        white-space: nowrap;
+    .copy a {
+        color: #666;
+        text-decoration: none;
+    }
+
+    .copy a:hover {
+        color: #e94560;
     }
 
     .lang {
@@ -70,9 +76,5 @@
 
     .sep {
         color: #444;
-    }
-
-    .stats {
-        white-space: nowrap;
     }
 </style>

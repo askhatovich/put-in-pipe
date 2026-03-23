@@ -129,6 +129,20 @@
         screen = 'file_select';
     }
 
+    async function handleJoinLink({ id, key, encryption }) {
+        const SUPPORTED = ['xchacha20-poly1305'];
+        if (!SUPPORTED.includes(encryption)) {
+            errorMsg = `Unsupported encryption: ${encryption}`;
+            return;
+        }
+        // Set anchor so startReceiver can parse it
+        location.hash = `id=${id}&encryption=${encryption}&key=${key}`;
+        pendingRole = 'receiver';
+        encryptionKey = base64urlToKey(key);
+        screen = 'connecting';
+        await identifyAndProceed(userName, 'receiver');
+    }
+
     async function handleFileSelected(file) {
         pendingFile = file;
         pendingRole = 'sender';
@@ -273,7 +287,7 @@
                 <div class="spinner"></div>
             </div>
         {:else if screen === 'entry'}
-            <EntryScreen name={userName} onstart={handleStart} />
+            <EntryScreen name={userName} onstart={handleStart} onjoinlink={handleJoinLink} />
             {#if errorMsg}
                 <p class="error">{errorMsg}</p>
             {/if}
@@ -327,13 +341,14 @@
 </div>
 
 <style>
-    :global(body) {
+    :global(html, body) {
         margin: 0;
         padding: 0;
         background: #1a1a2e;
         color: #eee;
         font-family: system-ui, -apple-system, sans-serif;
         min-height: 100vh;
+        overflow-x: hidden;
     }
 
     :global(*) {
@@ -384,6 +399,8 @@
     .file-select-screen {
         text-align: center;
         max-width: 400px;
+        width: 100%;
+        padding: 0 1rem;
     }
 
     .file-select-screen h2 {

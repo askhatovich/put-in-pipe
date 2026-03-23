@@ -2,9 +2,11 @@
     import { t, subscribe } from '$lib/i18n.js';
     import { encryptChunk, keyToBase64url } from '$lib/crypto.js';
     import { buildAnchor } from '$lib/url.js';
-    import { sendAction, sendBinary, on, off } from '$lib/ws.js';
+    import { sendAction, sendBinary, on, off, waitForConnection, isConnected } from '$lib/ws.js';
     import MemberList from './MemberList.svelte';
     import ProgressPanel from './ProgressPanel.svelte';
+    import SessionTimer from './SessionTimer.svelte';
+    import QRModal from './QRModal.svelte';
 
     let { sessionData, encryptionKey, initialFile = null, myName = '', myId = '', oncomplete } = $props();
 
@@ -26,6 +28,8 @@
     );
     let chunksSent = $state(0);
     let linkCopied = $state(false);
+    let showQR = $state(false);
+    let sessionExpirationIn = sessionData?.state?.expiration_in || 0;
     let errorMsg = $state('');
 
     let senderInfo = $state(sessionData?.members?.sender || null);
@@ -229,7 +233,12 @@
                 const rawData = new Uint8Array(await slice.arrayBuffer());
 
                 const encrypted = encryptChunk(rawData, encryptionKey);
-                sendBinary(encrypted);
+                if (!sendBinary(encrypted)) {
+                    // WS disconnected — wait for reconnect then retry this chunk
+                    await waitForConnection();
+                    i--; // retry this chunk
+                    continue;
+                }
 
                 // Wait for server to confirm chunk was accepted (new_chunk event)
                 // After this, bufferUsed is already incremented by onNewChunkEvent
@@ -257,6 +266,19 @@
     }
 
     let frozen = $state(sessionData?.state?.initial_freeze ?? true);
+    let freezeMaxSec = sessionData?.limits?.max_initial_freeze || 120;
+    let freezeRemaining = $state(freezeMaxSec);
+    let freezeProgress = $derived(frozen ? freezeRemaining / freezeMaxSec : 0);
+
+    // Countdown timer for freeze
+    $effect(() => {
+        if (!frozen) return;
+        const interval = setInterval(() => {
+            freezeRemaining = Math.max(0, freezeRemaining - 1);
+            if (freezeRemaining <= 0) clearInterval(interval);
+        }, 1000);
+        return () => clearInterval(interval);
+    });
 
     function handleDropFreeze() {
         sendAction('drop_freeze', {});
@@ -300,8 +322,16 @@
         />
         {#if frozen && receivers.length > 0}
             <button class="freeze-btn pulse" onclick={handleDropFreeze}>
-                {tt('startTransfer')}
+                <span class="freeze-bar" style="width: {Math.round(freezeProgress * 100)}%"></span>
+                <span class="freeze-label">{tt('startTransfer')} ({freezeRemaining}{tt('seconds')})</span>
             </button>
+        {/if}
+        {#if frozen && receivers.length === 0}
+            <div class="freeze-waiting">
+                {tt('freezeExpires')} ({freezeRemaining}{tt('seconds')})
+            </div>
+        {:else}
+            <SessionTimer expirationIn={sessionExpirationIn} />
         {/if}
         <button class="terminate-btn" onclick={handleTerminate}>
             {tt('terminateSession')}
@@ -316,6 +346,7 @@
                 <button onclick={copyLink}>
                     {linkCopied ? tt('copied') : tt('copyLink')}
                 </button>
+                <button class="qr-btn" onclick={() => showQR = true}>{tt('showQR')}</button>
             </div>
         </div>
 
@@ -337,6 +368,10 @@
         {/if}
     </div>
 </div>
+
+{#if showQR}
+    <QRModal url={shareLink} onclose={() => showQR = false} />
+{/if}
 
 <style>
     .session {
@@ -364,10 +399,34 @@
         cursor: pointer;
         font-size: 0.85rem;
         font-family: inherit;
+        position: relative;
+        overflow: hidden;
     }
 
     .freeze-btn:hover {
         background: #1a4a80;
+    }
+
+    .freeze-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: rgba(233, 69, 96, 0.25);
+        transition: width 1s linear;
+        pointer-events: none;
+    }
+
+    .freeze-label {
+        position: relative;
+        z-index: 1;
+    }
+
+    .freeze-waiting {
+        color: #999;
+        font-size: 0.75rem;
+        text-align: center;
+        padding: 0.4rem 0;
     }
 
     .freeze-btn.pulse {

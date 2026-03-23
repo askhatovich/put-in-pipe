@@ -2,8 +2,9 @@
     import { t, subscribe } from '$lib/i18n.js';
     import { decryptChunk } from '$lib/crypto.js';
     import { downloadChunk } from '$lib/api.js';
-    import { sendAction, on, off } from '$lib/ws.js';
+    import { sendAction, on, off, waitForConnection, isConnected } from '$lib/ws.js';
     import MemberList from './MemberList.svelte';
+    import SessionTimer from './SessionTimer.svelte';
     import ProgressPanel from './ProgressPanel.svelte';
 
     let { sessionData, encryptionKey, myName = '', myId = '', oncomplete } = $props();
@@ -25,6 +26,7 @@
     let errorMsg = $state('');
 
     let senderInfo = $state(sessionData?.members?.sender || null);
+    let sessionExpirationIn = sessionData?.state?.expiration_in || 0;
     let receivers = $state(sessionData?.members?.receivers || []);
 
     // Update own name in member list when changed via NameBadge
@@ -94,27 +96,36 @@
         );
     }
 
-    async function fetchAndDecryptChunk(index) {
+    async function fetchAndDecryptChunk(index, retries = 3) {
         if (chunks.has(index)) return;
 
-        try {
-            const result = await downloadChunk(index);
-            if (result.status !== 200 || !result.data) {
-                errorMsg = `Chunk ${index}: ${result.error || 'HTTP ' + result.status}`;
-                return;
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                const result = await downloadChunk(index);
+                if (result.status === 200 && result.data) {
+                    const encrypted = new Uint8Array(result.data);
+                    const decrypted = decryptChunk(encrypted, encryptionKey);
+
+                    chunks.set(index, decrypted);
+                    chunks = new Map(chunks);
+                    if (index > lastChunkIndex) lastChunkIndex = index;
+
+                    if (!sendAction('confirm_chunk', { index })) {
+                        await waitForConnection();
+                        sendAction('confirm_chunk', { index });
+                    }
+                    chunksConfirmed++;
+                    return;
+                }
+                if (result.status === 404) return; // chunk removed, skip
+                // Other error — retry after delay
+                await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            } catch (err) {
+                if (attempt === retries - 1) {
+                    errorMsg = `Chunk ${index}: ${err.message}`;
+                }
+                await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
             }
-
-            const encrypted = new Uint8Array(result.data);
-            const decrypted = decryptChunk(encrypted, encryptionKey);
-
-            chunks.set(index, decrypted);
-            chunks = new Map(chunks);
-            if (index > lastChunkIndex) lastChunkIndex = index;
-
-            sendAction('confirm_chunk', { index });
-            chunksConfirmed++;
-        } catch (err) {
-            errorMsg = `Chunk ${index}: ${err.message}`;
         }
     }
 
@@ -248,6 +259,7 @@
             {receivers}
             isSender={false}
         />
+        <SessionTimer expirationIn={sessionExpirationIn} />
     </div>
 
     <div class="main">
