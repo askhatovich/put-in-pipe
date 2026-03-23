@@ -42,7 +42,7 @@ void WebAPI::initRoutes()
     CROW_ROUTE(m_app, "/").methods("GET"_method)
     ([](const crow::request& req, crow::response& resp) {
         static const std::string html = getIndexHtml();
-        static const std::string etag = "\"" + std::to_string(std::hash<std::string>{}(html)) + "\"";
+        static const std::string etag = std::to_string(std::hash<std::string>{}(html));
 
         const auto ifNoneMatch = req.get_header_value("If-None-Match");
         if (ifNoneMatch == etag)
