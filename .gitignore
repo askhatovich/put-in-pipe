@@ -13,3 +13,8 @@ build/
 
 # CMake
 CMakeUserPresets.json
+
+# Frontend
+web/node_modules/
+web/dist/
+src/generated_index_html.h

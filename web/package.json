@@ -1,0 +1,21 @@
+{
+  "name": "put-in-pipe-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.0.0"
+  },
+  "dependencies": {
+    "libsodium-wrappers": "^0.7.15",
+    "libsodium-wrappers-sumo": "^0.8.2"
+  }
+}

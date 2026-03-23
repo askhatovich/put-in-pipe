@@ -5,6 +5,7 @@
 #include "webapi.h"
 #include "log.h"
 #include "config/config.h"
+#include "generated_index_html.h"
 #include "clientlist.h"
 #include "captcha/skaptcha.h"
 #include "transfersessionlist.h"
@@ -34,8 +35,9 @@ void WebAPI::initRoutes()
 
     CROW_ROUTE(m_app, "/").methods("GET"_method)
     ([](const crow::request& req, crow::response& resp) {
-        resp.set_header("Content-Type", "text/plain; charset=utf-8");
-        resp.body = "На проде здесь будет отдаваться бандл веб-приложения";
+        static const std::string html = getIndexHtml();
+        resp.set_header("Content-Type", "text/html; charset=utf-8");
+        resp.body = html;
         resp.end();
     });
 

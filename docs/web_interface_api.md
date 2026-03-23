@@ -2,7 +2,57 @@
 
 Put-In-Pipe documentation for front-end.
 
-Put-In-Pipe - application for direct file transfer between users, where the server does not store the entire file (and therefore does not limit the size of the transferred file to its disk), but acts as an intermediate buffer: it accepted part of the file from the sender, gave it to the recipients, and so on until the file is transferred in its entirety. The architecture is based on the REST API and WebSocket, the implementation can be either a web application in JS or in other languages for desktop use. The server implementation leaves room for the frontend in the key to protecting the transmitted data: you can use end-to-end encryption between users (taking into account the size of the added overhead), or transfer files in the clear. At the beginning of the project, it was assumed that the transmitted files should be protected from interception on the ChaCha20-Poly1305 server side by placing the key in the link via an anchor (#), which, according to the HTTP standard, is not transmitted from the address bar to the server when opening the site.
+Put-In-Pipe is a privacy-preserving file transfer application where the server acts as an intermediate buffer between a sender and multiple receivers. The server never stores the complete file (and therefore does not limit the transferred file size to its disk), but streams data in chunks: it accepts a part from the sender, delivers it to the receivers, and so on until the transfer is complete. Clients never connect directly to each other — IP addresses of participants are not disclosed.
+
+The architecture is based on REST API and WebSocket. The client can be a web application in JS or a desktop application in any other language.
+
+---
+
+## End-to-end encryption
+
+All transferred data is encrypted on the client side using **XChaCha20-Poly1305** (via libsodium). The server only sees opaque ciphertext and cannot decrypt the file contents.
+
+### Sharing link format
+
+The sender generates a sharing link containing the session ID and the encryption key in the URL anchor (`#`). Per the HTTP standard, the anchor is **never sent to the server** — it stays entirely in the browser.
+
+```
+https://example.com/#id=SESSION_ID&encryption=xchacha20-poly1305&key=BASE64URL_KEY
+```
+
+The anchor is parsed as query parameters:
+
+| Parameter | Description |
+|---|---|
+| `id` | Session ID (identical to the creator's public ID) |
+| `encryption` | Encryption algorithm identifier. Currently: `xchacha20-poly1305` |
+| `key` | Encryption key encoded in base64url (no padding) |
+
+The `encryption` field is included explicitly to allow future algorithm upgrades without breaking existing links.
+
+### Encryption flow
+
+**Sender (per chunk):**
+1. Generate a random 24-byte nonce
+2. Encrypt the chunk: `XChaCha20-Poly1305(plaintext, nonce, key)` → ciphertext (includes 16-byte auth tag)
+3. Prepend the nonce to the ciphertext: `[nonce (24 bytes)][ciphertext]`
+4. Send the result to the server as a binary chunk
+
+**Receiver (per chunk):**
+1. Receive the binary chunk from the server
+2. Split: first 24 bytes = nonce, remainder = ciphertext
+3. Decrypt: `XChaCha20-Poly1305_Open(ciphertext, nonce, key)` → plaintext
+4. If decryption fails (wrong key or tampered data), the chunk is rejected
+
+**Key generation:**
+- The sender generates a 256-bit (32-byte) key using `crypto_aead_xchacha20poly1305_ietf_keygen()`
+- The key is encoded as base64url (no padding) for inclusion in the URL anchor
+
+### Overhead
+
+Each encrypted chunk has a fixed overhead of **40 bytes**: 24-byte nonce + 16-byte Poly1305 authentication tag. For a typical chunk size of 5 MB this is negligible (~0.0008%).
+
+---
 
 # Common endpoints
 
