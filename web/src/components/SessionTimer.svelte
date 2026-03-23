@@ -1,7 +1,7 @@
 <script>
     import { t, subscribe } from '$lib/i18n.js';
 
-    let { expirationIn = 0 } = $props();
+    let { remaining = 0 } = $props();
 
     let langTick = $state(0);
     $effect(() => {
@@ -9,16 +9,6 @@
         return unsub;
     });
     function tt(key) { langTick; return t(key); }
-
-    let remaining = $state(expirationIn);
-
-    $effect(() => {
-        remaining = expirationIn;
-        const interval = setInterval(() => {
-            remaining = Math.max(0, remaining - 1);
-        }, 1000);
-        return () => clearInterval(interval);
-    });
 
     let displayTime = $derived(() => {
         const m = Math.floor(remaining / 60);

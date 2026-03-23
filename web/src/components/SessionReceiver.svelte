@@ -26,7 +26,15 @@
     let errorMsg = $state('');
 
     let senderInfo = $state(sessionData?.members?.sender || null);
-    let sessionExpirationIn = sessionData?.state?.expiration_in || 0;
+    let sessionExpirationIn = $state(sessionData?.state?.expiration_in || 0);
+
+    $effect(() => {
+        if (sessionExpirationIn <= 0) return;
+        const interval = setInterval(() => {
+            sessionExpirationIn = Math.max(0, sessionExpirationIn - 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    });
     let receivers = $state(sessionData?.members?.receivers || []);
 
     // Update own name in member list when changed via NameBadge
@@ -279,7 +287,7 @@
             {receivers}
             isSender={false}
         />
-        <SessionTimer expirationIn={sessionExpirationIn} />
+        <SessionTimer remaining={sessionExpirationIn} />
     </div>
 
     <div class="main">
