@@ -803,6 +803,7 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
             {"upload_finished", session.first->eof()},
             {"some_chunk_was_removed", session.first->someChunkWasRemoved()},
             {"initial_freeze", session.first->initialChunksFreeze()},
+            {"initial_freeze_remaining", session.first->remainingUntilAutoDropInitialFreeze().count()},
             {"chunks", std::move(chunksInfo)},
             {"expiration_in", session.second},
             {"file", {

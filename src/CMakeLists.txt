@@ -32,7 +32,6 @@ add_library(put-in-pipe-core STATIC
 
 target_include_directories(put-in-pipe-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
 )
 target_compile_definitions(put-in-pipe-core PUBLIC CROW_ENFORCE_WS_SPEC)
 
