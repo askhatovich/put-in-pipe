@@ -183,7 +183,6 @@
         if (completeHandled) return;
         completeHandled = true;
         const blob = assembleFile();
-        console.log('[Receiver] assembled blob:', blob?.size, 'expected:', totalBytes);
         oncomplete?.({ status: 'ok', blob });
     }
 
@@ -206,7 +205,6 @@
         if (completeHandled) return;
         const d = msg.data || msg;
         const status = d.status || 'ok';
-        console.log('[Receiver] complete event:', status);
 
         if (status === 'ok') {
             finishWithBlob();
@@ -218,7 +216,6 @@
 
     function onWsClose() {
         if (completeHandled) return;
-        console.log('[Receiver] WS closed', { uploadFinished, chunks: chunks.size, lastChunkIndex, highestKnownChunk });
         setTimeout(() => {
             if (completeHandled) return;
             // If upload finished and we have data, assemble what we have

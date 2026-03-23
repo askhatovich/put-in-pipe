@@ -89,9 +89,6 @@ public:
     size_t bytesOut() const               { return m_buffer.bytesOut(); }
     bool someChunkWasRemoved() const      { return m_buffer.someChunksWasRemoved(); }
     size_t currentMaxChunkIndex() const   { return m_buffer.currentMaxChunkIndex(); }
-    // size_t chunkCount() const             { return m_buffer.chunkCount(); }
-    // std::list<size_t> chunksIndex() const { return m_buffer.chunksIndex(); }
-
     bool newChunkIsAllowed() const        { return m_buffer.newChunkIsAllowed(); }
     void setEndOfFile();
     bool eof() const                    { return m_buffer.eof(); }

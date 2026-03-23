@@ -29,20 +29,17 @@ function createSocket(url, resolve, reject) {
     socket.binaryType = 'arraybuffer';
 
     socket.onopen = () => {
-        console.log('[WS] connected to', url);
         reconnectAttempts = 0;
         dispatch('open', null);
         if (resolve) resolve();
     };
 
     socket.onerror = (err) => {
-        console.error('[WS] error:', err);
         dispatch('error', err);
         if (reject) { reject(err); reject = null; }
     };
 
     socket.onclose = (ev) => {
-        console.log('[WS] closed:', ev.code, ev.reason);
         socket = null;
 
         // Normal close (1000) or intentional disconnect — no reconnect
@@ -64,7 +61,6 @@ function createSocket(url, resolve, reject) {
         try {
             const msg = JSON.parse(ev.data);
             if (msg.event) {
-                console.log('[WS] event:', msg.event, msg.data);
                 dispatch(msg.event, msg);
             }
         } catch {
@@ -76,7 +72,6 @@ function createSocket(url, resolve, reject) {
 function scheduleReconnect(url) {
     reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
-    console.log(`[WS] reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts})`);
 
     reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
@@ -107,7 +102,6 @@ export function disconnect() {
 
 export function sendAction(action, data) {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-        console.error('sendAction failed: WebSocket not connected, action:', action);
         return false;
     }
     socket.send(JSON.stringify({ action, data }));
@@ -116,7 +110,6 @@ export function sendAction(action, data) {
 
 export function sendBinary(data) {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-        console.error('sendBinary failed: WebSocket not connected');
         return false;
     }
     socket.send(data);

@@ -234,9 +234,7 @@
     }
 
     async function startSender() {
-        console.log('[App] startSender: creating session...');
         const res = await createSession();
-        console.log('[App] createSession result:', res.status, res.data);
         if (res.status !== 201) {
             errorMsg = res.data || res.error || t('error');
             screen = 'entry';
@@ -245,19 +243,15 @@
 
         encryptionKey = generateKey();
 
-        console.log('[App] connecting WebSocket...');
         try {
             await connect();
-            console.log('[App] WebSocket connected');
         } catch (e) {
-            console.error('[App] WebSocket failed:', e);
             errorMsg = t('error') + ': WebSocket';
             screen = 'entry';
             return;
         }
 
         on('start_init', (msg) => {
-            console.log('[App] start_init received');
             sessionData = msg.data;
             screen = 'sender';
         });

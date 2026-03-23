@@ -29,9 +29,6 @@ TransferSessionList &TransferSessionList::instanse()
 
 TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_ptr<Client> creator)
 {
-    // checked in webapi
-    // if (not possibleToCreateNew()) return nullptr;
-
     if (creator == nullptr) return {nullptr, 0};
 
     std::unique_lock lock (m_mutex);

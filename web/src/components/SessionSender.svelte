@@ -255,7 +255,6 @@
 
         try {
             const totalChunks = Math.ceil(file.size / maxChunkSize);
-            console.log('[Sender] upload start:', { fileSize: file.size, maxChunkSize, totalChunks });
             for (let i = 0; i < totalChunks; i++) {
 
                 const start = i * maxChunkSize;
@@ -321,26 +320,15 @@
     }
 
     function handleTerminate() {
-        const ok = sendAction('terminate_session', {});
-        console.log('[Sender] terminate_session sent:', ok);
+        sendAction('terminate_session', {});
     }
 
     async function copyLink() {
         try {
             await navigator.clipboard.writeText(shareLink);
-            linkCopied = true;
-            setTimeout(() => { linkCopied = false; }, 2000);
-        } catch {
-            // fallback
-            const ta = document.createElement('textarea');
-            ta.value = shareLink;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-            linkCopied = true;
-            setTimeout(() => { linkCopied = false; }, 2000);
-        }
+        } catch { /* clipboard API unavailable */ }
+        linkCopied = true;
+        setTimeout(() => { linkCopied = false; }, 2000);
     }
 </script>
 

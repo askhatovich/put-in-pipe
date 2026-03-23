@@ -23,8 +23,8 @@ public:
     void close();
 
 private:
-    WebSocketConnection(std::shared_ptr<Client> с)
-        : m_client(с) {}
+    WebSocketConnection(std::shared_ptr<Client> client)
+        : m_client(client) {}
 
     crow::websocket::connection* m_connection = nullptr;
     std::weak_ptr<Client> m_client;
