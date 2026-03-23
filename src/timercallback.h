@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <chrono>
+#include <mutex>
 #include <asio.hpp>
 #include <atomic>
 
@@ -37,5 +38,6 @@ private:
     Callback m_callback;
     Duration m_duration;
     std::chrono::steady_clock::time_point m_startTime;
+    mutable std::mutex m_timeMutex;
     std::atomic<bool> m_isRunning;
 };

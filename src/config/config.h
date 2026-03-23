@@ -8,6 +8,11 @@ class Config
 public:
     static Config& instance();
 
+    // Returns true on success, false on parse error.
+    // Prints diagnostics to stderr on failure.
+    bool loadFromFile(const std::string& path);
+
+    void setLogLevel(const std::string& level)              { m_logLevel = level; }
     void setBindAddress(const std::string& address)        { m_address = address; }
     void setBindPort(uint16_t port)                        { m_port = port; }
     void setApiMaxClientCount(size_t value)                { m_apiMaxClientCount = value; }
@@ -21,6 +26,7 @@ public:
     void setTransferSessionMaxConsumerCount(size_t value)  { m_transferSessionMaxConsumerCount = value; }
     void setTransferSessionMaxInitialFreezeDuration(size_t value) { m_transferSessionMaxInitialFreezeDuration = value; }
 
+    std::string logLevel() const                     { return m_logLevel; }
     std::string bindAddress() const                 { return m_address; }
     uint16_t bindPort() const                       { return m_port; }
     size_t clientTimeout() const                    { return m_clientTimeout; }
@@ -40,6 +46,7 @@ private:
     Config(Config&&) = delete;
     Config& operator=(const Config&) = delete;
 
+    std::string m_logLevel = "info";
     std::string m_address;
     uint16_t m_port = 0;
     size_t m_apiMaxClientCount = 0;

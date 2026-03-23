@@ -245,7 +245,7 @@ Immediately after connection, the server sends the information necessary to init
       "file": {
         "name": "",
         "size": 0
-      }
+      },
       "expiration_in": 7200,
       "some_chunk_was_removed": false,
       "chunks": [
@@ -419,7 +419,7 @@ The event indicates the start of the download and the finish when the receiver e
 }
 ```
 
-#### E2.7 Сounter of total transfered data has increased
+#### E2.7 Counter of total transferred data has increased
 
 ```
 {
@@ -607,7 +607,8 @@ If the requested fragment is not found, a separate event is returned containing 
         "index": 80,
         "size": 62857
       }
-  ]
+    ]
+  }
 }
 ```
 

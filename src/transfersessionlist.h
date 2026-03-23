@@ -50,5 +50,5 @@ private:
     std::unordered_map<std::string, SessionWithTimer> m_map;
 
     asio::io_context m_ioContext;
-    std::thread* m_ioContextThreadPtr;
+    std::unique_ptr<std::thread> m_ioContextThreadPtr;
 };

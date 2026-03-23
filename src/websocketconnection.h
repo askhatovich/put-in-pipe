@@ -38,9 +38,7 @@ struct WebSocketConnectionRAIIWrapper
 {
     WebSocketConnectionRAIIWrapper(std::shared_ptr<Client> client)
         : ws(new WebSocketConnection(client))
-    {
-        std::cout << "WebSocketConnectionRAIIWrapper()" << std::endl; // DEBUG
-    }
+    {}
     ~WebSocketConnectionRAIIWrapper();
 
     std::shared_ptr<WebSocketConnection> ws;

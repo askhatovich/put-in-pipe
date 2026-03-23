@@ -7,6 +7,7 @@
 #include "atomicset.h"
 
 #include <map>
+#include <atomic>
 #include <shared_mutex>
 #include <memory>
 #include <vector>
@@ -63,7 +64,7 @@ private:
     std::map<size_t, std::shared_ptr<Chunk>> m_chunks;
     size_t m_chunksMaxIndex = 0;
     size_t m_bytesInTotal = 0;
-    mutable size_t m_bytesOutTotal = 0;
+    mutable std::atomic<size_t> m_bytesOutTotal = 0;
     bool m_someChunkWasRemoved = false;
     bool m_EOF = false;
 

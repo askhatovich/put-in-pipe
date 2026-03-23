@@ -3,6 +3,7 @@
 // For full license text, see <https://www.gnu.org/licenses/gpl-3.0.txt>
 
 #include "webapi.h"
+#include "log.h"
 #include "config/config.h"
 #include "clientlist.h"
 #include "captcha/skaptcha.h"
@@ -308,7 +309,7 @@ void WebAPI::identityValidation(const crow::request &req, crow::response &res)
         res.end();
         return;
     }
-    if (captchaToken.empty())
+    if (name.empty())
     {
         res.code = 400;
         res.body = ".name is empty";
@@ -368,6 +369,7 @@ void WebAPI::sessionCreate(const crow::request &req, crow::response &res)
     const auto newSession = TransferSessionList::instanse().create(client);
     if (newSession.first == nullptr)
     {
+        PLOG_ERROR << "Session creation failed for client " << client->publicId();
         res.code = 500;
         res.body = "Session creation failed";
         res.end();
@@ -375,6 +377,7 @@ void WebAPI::sessionCreate(const crow::request &req, crow::response &res)
     }
     if (not client->joinSession(newSession.first->id()))
     {
+        PLOG_ERROR << "Client " << client->publicId() << " failed to join own session";
         TransferSessionList::instanse().remove(newSession.first->id());
         res.code = 500;
         res.body = "Session creation failed";
@@ -481,6 +484,7 @@ void WebAPI::sessionJoin(const crow::request &req, crow::response &res)
 
     if (not session.first->addReceiver(client))
     {
+        PLOG_WARNING << "addReceiver failed for client " << client->publicId() << " to session " << session.first->id();
         res.code = 500;
         res.body = "Couldn't join the session";
         res.end();
@@ -489,6 +493,7 @@ void WebAPI::sessionJoin(const crow::request &req, crow::response &res)
 
     if (not client->joinSession(session.first->id()))
     {
+        PLOG_ERROR << "Client " << client->publicId() << " joinSession failed for " << session.first->id();
         res.code = 500;
         res.body = "Couldn't join the session (2)";
         res.end();
@@ -657,17 +662,20 @@ bool WebAPI::wsOnAccept(const crow::request &req, void **userdata)
     const auto token = cookieCtx.get_cookie(CLIENT_ID_TOKEN);
     if (token.empty())
     {
+        PLOG_DEBUG << "WS rejected: no token";
         return false;
     }
 
     const auto client = ClientList::instanse().get(token);
     if (client == nullptr)
     {
+        PLOG_DEBUG << "WS rejected: invalid token";
         return false;
     }
 
     if (client->joinedSession().empty())
     {
+        PLOG_DEBUG << "WS rejected: client " << client->publicId() << " not in session";
         return false;
     }
 
@@ -702,7 +710,7 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
 
     wsWrapperPtr->setConnection(conn);
 
-    std::cerr << "wsOnConnect " << client->id() << std::endl; // DEBUG
+    PLOG_DEBUG << "wsOnConnect " << client->id();
 
 
     const auto session = TransferSessionList::instanse().get(client->joinedSession());
@@ -800,22 +808,15 @@ void WebAPI::wsOnConnect(crow::websocket::connection &conn)
 
 void WebAPI::wsOnClose(crow::websocket::connection &conn, const std::string& /*reason*/, uint16_t /*code*/)
 {
-    if (conn.userdata() == nullptr) return;
-
-    static std::mutex mutex;
-    std::lock_guard guard(mutex);
-
-    // double check
-    if (conn.userdata() == nullptr) return;
-
     auto wsWrapperPtr = static_cast<WsRaiiWrapper*>(conn.userdata());
-    delete wsWrapperPtr;
+    if (wsWrapperPtr == nullptr) return;
     conn.userdata(nullptr);
+    delete wsWrapperPtr;
 }
 
 void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &data, bool isBinary)
 {
-    std::cerr << "WS " << isBinary << " " << data << std::endl; // DEBUG
+    PLOG_VERBOSE << "WS isBinary=" << isBinary << " size=" << data.size();
 
     auto wsWrapperPtr = static_cast<WsRaiiWrapper*>(conn.userdata());
     auto client = wsWrapperPtr->client().lock();
@@ -935,7 +936,7 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
      * Any exception is an invalid request.
      */
 
-    std::cerr << "WS internalWsMessageProcessing: " << action << std::endl; // DEBUG
+    PLOG_DEBUG << "WS internalWsMessageProcessing: " << action;
 
     if (action == "set_file_info") // creator only
     {

@@ -5,7 +5,7 @@
 #include "token.h"
 #include "skaptcha_tools.h"
 
-#include <iostream>
+#include "../log.h"
 
 namespace skaptcha_tools {
 
@@ -69,7 +69,7 @@ std::string Token::dump() const
         return tokenPayload + m_delimiter + signature;
 
     } catch (std::exception& e) {
-        std::cerr << __PRETTY_FUNCTION__ << " exception: " << e.what() << std::endl;
+        PLOG_ERROR << __PRETTY_FUNCTION__ << " exception: " << e.what();
         return std::string("500");
     }
 }

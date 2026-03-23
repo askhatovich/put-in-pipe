@@ -19,12 +19,13 @@ size_t Chunk::howMuchIsLeft() const
 {
     std::shared_lock guard(m_usesMutex);
 
-    if (m_uses > m_consumerExpected.value())
+    const size_t expected = m_consumerExpected.value();
+    if (m_uses >= expected)
     {
         return 0;
     }
 
-    return m_consumerExpected.value() - m_uses;
+    return expected - m_uses;
 }
 
 size_t Chunk::usesCount() const

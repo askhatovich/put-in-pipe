@@ -1,0 +1,25 @@
+[Unit]
+Description=Put-In-Pipe — privacy-preserving streaming file transfer server
+After=network.target
+
+[Service]
+Type=simple
+User=put-in-pipe
+Group=put-in-pipe
+ExecStartPre=/usr/bin/put-in-pipe --generate-config /etc/put-in-pipe/config.ini
+ExecStart=/usr/bin/put-in-pipe --config /etc/put-in-pipe/config.ini
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/etc/put-in-pipe
+
+[Install]
+WantedBy=multi-user.target

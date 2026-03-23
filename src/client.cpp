@@ -7,6 +7,7 @@
 #include "serializableevent.h"
 #include "transfersession.h"
 #include "config/config.h"
+#include "log.h"
 
 #include <mutex>
 
@@ -15,7 +16,7 @@ Client::Client(const std::string &id, asio::io_context& ioContext, std::function
     m_publicId(skaptcha_tools::crypto::HashSignature::instance().sign(m_id)),
     m_wsTimeoutTimer(ioContext, onTimeout, TimerCallback::Duration(Config::instance().clientTimeout()))
 {
-    std::cerr << "Client " << m_id << " created" << std::endl; // DEBUG
+    PLOG_DEBUG << "Client " << m_id << " created";
     m_wsTimeoutTimer.start();
 }
 
@@ -51,7 +52,7 @@ bool Client::joinSession(const std::string &id)
 {
     if (id.empty()) return false;
 
-    std::shared_lock lock (m_mutex);
+    std::unique_lock lock (m_mutex);
     if (not m_joinedSession.empty())
     {
         return false;
@@ -81,8 +82,8 @@ void Client::update(Event::ClientsDirect event, std::any data)
                 sp->sendText( SerializableEvent::Online{publicId, true}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::ClientsDirect::connected "
-                         "- expected std::string: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::ClientsDirect::connected "
+                         "- expected std::string: " << e.what();
         }
         return;
     }
@@ -95,8 +96,8 @@ void Client::update(Event::ClientsDirect event, std::any data)
                 sp->sendText( SerializableEvent::Online{publicId, false}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::ClientsDirect::disconnected "
-                         "- expected std::string: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::ClientsDirect::disconnected "
+                         "- expected std::string: " << e.what();
         }
         return;
     }
@@ -109,14 +110,14 @@ void Client::update(Event::ClientsDirect event, std::any data)
                 sp->sendText( SerializableEvent::NameChanged{nameInfo.publicId, nameInfo.name}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::ClientsDirect::nameChanged "
-                         "- expected Event::Data::NameInfo: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::ClientsDirect::nameChanged "
+                         "- expected Event::Data::NameInfo: " << e.what();
         }
         return;
     }
     else
     {
-        std::cerr << "Client::update(Event::ClientsDirect) unknown event" << std::endl;
+        PLOG_WARNING << "Client::update(Event::ClientsDirect) unknown event";
     }
 }
 
@@ -124,12 +125,12 @@ void Client::update(Event::TransferSession event, std::any data)
 {
     if (event == Event::TransferSession::newReceiver)
     {
-        std::cout << "New receiver event for " << m_id << std::endl;
+        PLOG_DEBUG << "New receiver event for " << m_id;
         try {
             std::shared_ptr<Client> client = std::any_cast<std::shared_ptr<Client>>(data);
             if (client == nullptr)
             {
-                std::cerr << "Client::update - Event::TransferSession::newReceiver - data nullptr" << std::endl;
+                PLOG_WARNING << "Client::update - Event::TransferSession::newReceiver - data nullptr";
                 return;
             }
             if (auto sp = m_webSocketConnection.lock())
@@ -137,8 +138,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::NewReceiver{client->publicId(), client->name()}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::newReceiver "
-                         "- expected std::shared_ptr<Client>: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::newReceiver "
+                         "- expected std::shared_ptr<Client>: " << e.what();
         }
         return;
     }
@@ -151,8 +152,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::ReceiverRemoved{publicId}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::receiverRemoved "
-                         "- expected std::string: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::receiverRemoved "
+                         "- expected std::string: " << e.what();
         }
         return;
     }
@@ -165,8 +166,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::FileInfoUpdated{fileInfo.name, fileInfo.size}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::fileInfoUpdated "
-                         "- expected FileInfo: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::fileInfoUpdated "
+                         "- expected FileInfo: " << e.what();
         }
         return;
     }
@@ -179,8 +180,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::ChunkDownload{info.publicId, info.chunkId, true}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::chunkDownloadStarted "
-                         "- expected TransferSessionDownloadInfo: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::chunkDownloadStarted "
+                         "- expected TransferSessionDownloadInfo: " << e.what();
         }
         return;
     }
@@ -193,8 +194,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::ChunkDownload{info.publicId, info.chunkId, false}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::chunkDownloadFinished "
-                         "- expected TransferSessionDownloadInfo: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::chunkDownloadFinished "
+                         "- expected TransferSessionDownloadInfo: " << e.what();
         }
         return;
     }
@@ -207,8 +208,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::NewChunkAvailable{info.index, info.size}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::newChunkIsAvailable "
-                         "- expected ChunkInfo: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::newChunkIsAvailable "
+                         "- expected ChunkInfo: " << e.what();
         }
         return;
     }
@@ -221,8 +222,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::ChunksRemoved{list}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::chunksWasRemoved "
-                         "- expected std::list<size_t>: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::chunksWasRemoved "
+                         "- expected std::list<size_t>: " << e.what();
         }
         return;
     }
@@ -243,8 +244,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::SessionComplete{type}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::complete "
-                         "- expected TransferSessionCompleteType: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::complete "
+                         "- expected TransferSessionCompleteType: " << e.what();
         }
         return;
     }
@@ -257,8 +258,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::TotalBytesCount{value, true}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::bytesInUpdated "
-                         "- expected size_t: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::bytesInUpdated "
+                         "- expected size_t: " << e.what();
         }
         return;
     }
@@ -271,8 +272,8 @@ void Client::update(Event::TransferSession event, std::any data)
                 sp->sendText( SerializableEvent::TotalBytesCount{value, false}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSession::bytesOutUpdated "
-                         "- expected size_t: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSession::bytesOutUpdated "
+                         "- expected size_t: " << e.what();
         }
         return;
     }
@@ -286,7 +287,7 @@ void Client::update(Event::TransferSession event, std::any data)
     }
     else
     {
-        std::cerr << "Client::update(Event::TransferSession) unknown event" << std::endl;
+        PLOG_WARNING << "Client::update(Event::TransferSession) unknown event";
     }
 }
 
@@ -301,28 +302,26 @@ void Client::update(Event::TransferSessionForSender event, std::any data)
                 sp->sendText( SerializableEvent::NewChunkIsAllowed{status}.json() );
             }
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "Client::update - Event::TransferSessionForSender::newChunkIsAllowed "
-                         "- expected bool: " << e.what() << std::endl;
+            PLOG_ERROR << "Client::update - Event::TransferSessionForSender::newChunkIsAllowed "
+                         "- expected bool: " << e.what();
         }
         return;
     }
     else
     {
-        std::cerr << "Client::update(Event::TransferSessionForSender) unknown event" << std::endl;
+        PLOG_WARNING << "Client::update(Event::TransferSessionForSender) unknown event";
     }
 }
 
 Client::~Client()
 {
-    std::cerr << "~Client " << m_publicId << " destructing" << std::endl; // DEBUG
+    PLOG_DEBUG << "Client " << m_publicId << " destroyed";
     Publisher<Event::ClientInternal>::notifySubscribers(Event::ClientInternal::destroyed, m_publicId);
 
     if (auto sp = m_webSocketConnection.lock())
     {
         sp->close();
-        std::cerr << "~Client ws connection close()" << std::endl; // DEBUG
     }
-    std::cerr << "~Client " << m_publicId << " destructed" << std::endl; // DEBUG
 }
 
 std::string Client::name() const

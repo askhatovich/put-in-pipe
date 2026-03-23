@@ -6,6 +6,7 @@
 #include "client.h"
 #include "observerpattern.h"
 #include "captcha/skaptcha_tools.h"
+#include "log.h"
 
 #include <mutex>
 #include <chrono>
@@ -14,8 +15,10 @@
 ClientList::~ClientList()
 {
     m_ioContext.stop();
-    m_ioContextThreadPtr->join();
-    delete m_ioContextThreadPtr;
+    if (m_ioContextThreadPtr && m_ioContextThreadPtr->joinable())
+    {
+        m_ioContextThreadPtr->join();
+    }
 }
 
 ClientList &ClientList::instanse()
@@ -54,7 +57,7 @@ std::shared_ptr<Client> ClientList::create(const std::string &token)
         return nullptr;
     }
 
-    auto client = createSubscriber<Client>(token, m_ioContext, [&, token](){ std::cout << "Client timeout" << std::endl /*DEBUG*/; this->remove(token); });
+    auto client = createSubscriber<Client>(token, m_ioContext, [&, token](){ PLOG_DEBUG << "Client timeout: " << token; this->remove(token); });
 
     m_map[token] = client;
 
@@ -101,7 +104,7 @@ void ClientList::remove(const std::string &id)
 
 ClientList::ClientList()
 {
-    m_ioContextThreadPtr = new std::thread([&]() {
+    m_ioContextThreadPtr = std::make_unique<std::thread>([&]() {
         asio::executor_work_guard<asio::io_context::executor_type> work = asio::make_work_guard(m_ioContext);
         m_ioContext.run();
     });

@@ -34,7 +34,7 @@ private:
     ClientList(ClientList&&) = delete;
     ClientList& operator=(const ClientList&) = delete;
 
-    std::thread* m_ioContextThreadPtr = nullptr;
+    std::unique_ptr<std::thread> m_ioContextThreadPtr;
     asio::io_context m_ioContext;
 
     mutable std::shared_mutex m_mutex;

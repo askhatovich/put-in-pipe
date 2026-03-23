@@ -7,8 +7,8 @@
 TimerCallback::TimerCallback(TimerCallback &&another) noexcept
     : m_timer(std::move(another.m_timer))
     , m_callback(std::move(another.m_callback))
-    , m_duration(std::move(another.m_duration))
-    , m_startTime(std::move(another.m_startTime))
+    , m_duration(another.m_duration)
+    , m_startTime(another.m_startTime)
     , m_isRunning(another.m_isRunning.exchange(false))
 {
 }
@@ -25,7 +25,10 @@ void TimerCallback::start()
         return;
     }
 
-    m_startTime = std::chrono::steady_clock::now();
+    {
+        std::lock_guard lock(m_timeMutex);
+        m_startTime = std::chrono::steady_clock::now();
+    }
     m_timer.expires_after(m_duration);
 
     m_timer.async_wait([this](const std::error_code& ec) {
@@ -56,7 +59,10 @@ bool TimerCallback::isRunning() const
 void TimerCallback::restart(Duration newDuration)
 {
     stop();
-    m_duration = newDuration;
+    {
+        std::lock_guard lock(m_timeMutex);
+        m_duration = newDuration;
+    }
     start();
 }
 
@@ -73,6 +79,7 @@ TimerCallback::Duration TimerCallback::timeRemaining() const
         return Duration(0);
     }
 
+    std::lock_guard lock(m_timeMutex);
     const auto elapsed = std::chrono::steady_clock::now() - m_startTime;
     const auto remaining = m_duration - std::chrono::duration_cast<Duration>(elapsed);
 

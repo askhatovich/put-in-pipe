@@ -1,3 +1,15 @@
-*/build
-*/*.txt.user
+# Build artifacts
+build/
+*/build/
+
+# Qt Creator
+*.txt.user
 /src/.qtcreator
+
+# Packages
+*.deb
+*.rpm
+*.tar.gz
+
+# CMake
+CMakeUserPresets.json

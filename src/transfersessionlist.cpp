@@ -4,13 +4,17 @@
 #include "transfersession.h"
 #include "config/config.h"
 
+#include "log.h"
+
 #include <mutex>
 
 TransferSessionList::~TransferSessionList()
 {
     m_ioContext.stop();
-    m_ioContextThreadPtr->join();
-    delete m_ioContextThreadPtr;
+    if (m_ioContextThreadPtr && m_ioContextThreadPtr->joinable())
+    {
+        m_ioContextThreadPtr->join();
+    }
 }
 
 TransferSessionList &TransferSessionList::instanse()
@@ -63,7 +67,7 @@ TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_p
 
     if (iter == m_map.end())
     {
-        std::cerr << "TransferSessionList::create - invalid iterator" << std::endl;
+        PLOG_ERROR << "TransferSessionList::create - invalid iterator";
         return {nullptr, 0};
     }
 
@@ -122,7 +126,7 @@ void TransferSessionList::remove(const std::string &id)
 
 TransferSessionList::TransferSessionList()
 {
-    m_ioContextThreadPtr = new std::thread([&]() {
+    m_ioContextThreadPtr = std::make_unique<std::thread>([&]() {
         asio::executor_work_guard<asio::io_context::executor_type> work = asio::make_work_guard(m_ioContext);
         m_ioContext.run();
     });

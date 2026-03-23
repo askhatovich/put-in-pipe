@@ -8,7 +8,8 @@
 #include "crowlib/crow/utility.h"
 #include "config/config.h"
 
-#include <iostream>
+#include "log.h"
+
 #include <mutex>
 
 TransferSession::TransferSession(std::shared_ptr<Client> sender, const std::string& sessionId, asio::io_context& ioContext)
@@ -16,12 +17,12 @@ TransferSession::TransferSession(std::shared_ptr<Client> sender, const std::stri
     , m_dataSender(sender)
     , m_ioContext(ioContext)
 {
-    std::cerr << "Session " << sessionId << " created" << std::endl; // DEBUG
+    PLOG_DEBUG << "Session " << sessionId << " created";
 }
 
 TransferSession::~TransferSession()
 {
-    std::cerr << "~Session " << m_id << " destructing..." << std::endl; // DEBUG
+    PLOG_INFO << "Session " << m_id << " destroyed";
 
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::complete, m_completeType);
 
@@ -37,8 +38,6 @@ TransferSession::~TransferSession()
     {
         ClientList::instanse().remove(sp->id());
     }
-
-    std::cerr << "~Session " << m_id << " destructed" << std::endl; // DEBUG
 }
 
 void TransferSession::initTimers(std::shared_ptr<TransferSession> me)
@@ -54,7 +53,7 @@ void TransferSession::initTimers(std::shared_ptr<TransferSession> me)
 
     m_initialFreezeTimer->start();
 
-    std::cerr << "Session " << m_id << " initTimers() called" << std::endl; // DEBUG
+    PLOG_DEBUG << "Session " << m_id << " timers initialized";
 }
 
 const TransferSession::FileInfo TransferSession::fileInfo() const
@@ -85,35 +84,41 @@ bool TransferSession::addReceiver(std::shared_ptr<Client> client)
         return false;
     }
 
-    for (auto& anotherReceiver: m_dataReceivers)
-    {
-        if (auto spAnotherReceiver = anotherReceiver.lock())
+    try {
+        for (auto& anotherReceiver: m_dataReceivers)
         {
-            if (spAnotherReceiver->publicId() == client->publicId())
+            if (auto spAnotherReceiver = anotherReceiver.lock())
             {
-                std::cerr << "TransferSession::addReceiver() anomaly: client "
-                          << client->name() << "/" << client->id() << " already exists" << std::endl;
-                continue;
+                if (spAnotherReceiver->publicId() == client->publicId())
+                {
+                    PLOG_WARNING << "TransferSession::addReceiver() anomaly: client "
+                                 << client->name() << "/" << client->id() << " already exists";
+                    continue;
+                }
+
+                client->Publisher<Event::ClientsDirect>::addSubscriber(spAnotherReceiver);
+                spAnotherReceiver->Publisher<Event::ClientsDirect>::addSubscriber(client);
             }
-
-            client->Publisher<Event::ClientsDirect>::addSubscriber(spAnotherReceiver);
-            spAnotherReceiver->Publisher<Event::ClientsDirect>::addSubscriber(client);
         }
+
+        m_dataReceivers.push_back(client);
+
+        client->Publisher<Event::ClientInternal>::addSubscriber(shared_from_this());
+
+        Publisher<Event::TransferSession>::addSubscriber(client);
+        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::newReceiver, client);
+    } catch (...) {
+        std::list<size_t> removedChunks;
+        m_buffer.removeOneFromExpectedConsumers(client->publicId(), removedChunks);
+        throw;
     }
-
-    m_dataReceivers.push_back(client);
-
-    client->Publisher<Event::ClientInternal>::addSubscriber(shared_from_this());
-
-    Publisher<Event::TransferSession>::addSubscriber(client);
-    Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::newReceiver, client);
 
     return true;
 }
 
 void TransferSession::removeReceiver(const std::string &publicId)
 {
-    std::cout << "TransferSession::removeReceiver 1 " << publicId << std::endl; // DEBUG
+    PLOG_INFO << "Session " << m_id << ": removing receiver " << publicId;
     std::unique_lock lock (m_receiversMutex);
 
     /*
@@ -133,7 +138,6 @@ void TransferSession::removeReceiver(const std::string &publicId)
 
             m_dataReceivers.erase(iter);
             ClientList::instanse().remove(spReceiver->id());
-            std::cout << "TransferSession::removeReceiver 2 " << publicId << std::endl; // DEBUG
 
             break; // no any job after iter erase!
         }
@@ -146,6 +150,7 @@ void TransferSession::removeReceiver(const std::string &publicId)
          * because the initial part of the file has already been lost.
          */
 
+        PLOG_INFO << "Session " << m_id << ": no receivers left, terminating";
         m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
         TransferSessionList::instanse().remove(m_id);
         return;
@@ -212,7 +217,7 @@ const std::shared_ptr<const std::vector<uint8_t>> TransferSession::getChunk(size
 {
     if (client == nullptr)
     {
-        std::cerr << "TransferSession::getChunk() anomaly: client is nullptr" << std::endl;
+        PLOG_WARNING << "TransferSession::getChunk(): client is nullptr";
         return nullptr;
     }
 
@@ -235,7 +240,7 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
 {
     if (client == nullptr)
     {
-        std::cerr << "TransferSession::setChunkAsReceived() anomaly: client is nullptr" << std::endl;
+        PLOG_WARNING << "TransferSession::setChunkAsReceived(): client is nullptr";
         return;
     }
 
@@ -276,12 +281,14 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
 
     if (newCount == 0 and m_buffer.eof())
     {
+        PLOG_INFO << "Session " << m_id << ": transfer complete";
         TransferSessionList::instanse().remove(m_id);
     }
 }
 
 void TransferSession::manualTerminate()
 {
+    PLOG_INFO << "Session " << m_id << ": manually terminated by sender";
     m_completeType = Event::Data::TransferSessionCompleteType::senderIsGone;
     TransferSessionList::instanse().remove(m_id);
 }
@@ -306,16 +313,27 @@ void TransferSession::dropInitialChunksFreeze()
         return;
     }
 
-    std::shared_lock lock (m_receiversMutex);
-    if (m_dataReceivers.empty())
+    PLOG_INFO << "Session " << m_id << ": initial freeze dropped";
+
+    bool shouldRemove = false;
     {
-        m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
-        TransferSessionList::instanse().remove(m_id);
-        return;
+        std::shared_lock lock (m_receiversMutex);
+        if (m_dataReceivers.empty())
+        {
+            PLOG_INFO << "Session " << m_id << ": no receivers after freeze, terminating";
+            m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
+            shouldRemove = true;
+        }
+        else if (m_fileInfo.name.empty())
+        {
+            PLOG_INFO << "Session " << m_id << ": file info not set after freeze, terminating";
+            m_completeType = Event::Data::TransferSessionCompleteType::senderIsGone;
+            shouldRemove = true;
+        }
     }
-    if (m_fileInfo.name.empty())
+
+    if (shouldRemove)
     {
-        m_completeType = Event::Data::TransferSessionCompleteType::senderIsGone;
         TransferSessionList::instanse().remove(m_id);
         return;
     }
@@ -345,19 +363,19 @@ void TransferSession::update(Event::ClientInternal event, std::any data)
                     return;
                 }
 
-                // data sender (creator of this session) is gone
+                PLOG_INFO << "Session " << m_id << ": sender disconnected before upload finished, terminating";
                 m_completeType = Event::Data::TransferSessionCompleteType::senderIsGone;
                 TransferSessionList::instanse().remove(m_id);
                 return;
             }
             removeReceiver(publicId);
         } catch (const std::bad_any_cast& e) {
-            std::cerr << "TransferSession::update - Event::ClientInternal::destroyed - expected std::string: " << e.what() << std::endl;
+            PLOG_ERROR << "TransferSession::update - Event::ClientInternal::destroyed - expected std::string: " << e.what();
             return;
         }
     }
     else
     {
-        std::cerr << "TransferSession::update(Event::ClientInternal) unknown event" << std::endl;
+        PLOG_WARNING << "TransferSession::update(Event::ClientInternal) unknown event";
     }
 }

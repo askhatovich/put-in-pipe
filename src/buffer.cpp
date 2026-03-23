@@ -6,9 +6,10 @@
 #include "config/config.h"
 #include "chunk.h"
 
+#include "log.h"
+
 #include <mutex>
 #include <shared_mutex>
-#include <iostream>
 
 
 namespace TransferSessionDetails {
@@ -22,7 +23,7 @@ size_t Buffer::addChunk(const std::string &binaryData)
 {
     if (m_EOF)
     {
-        std::cerr << "Buffer::addChunk() anomaly: EOF is true" << std::endl;
+        PLOG_WARNING << "Buffer::addChunk() anomaly: EOF is true";
         return 0;
     }
 
@@ -113,7 +114,7 @@ size_t Buffer::chunkCount() const
 
 bool Buffer::newChunkIsAllowed() const
 {
-    return Config::instance().transferSessionChunkQueueMaxSize() < chunkCount();
+    return Config::instance().transferSessionChunkQueueMaxSize() > chunkCount();
 }
 
 std::list<size_t> Buffer::chunksIndex() const
@@ -150,7 +151,7 @@ void Buffer::setEndOfFile()
 
     if (m_EOF)
     {
-        std::cerr << "Buffer::setEndOfFile() anomaly: EOF already is true" << std::endl;
+        PLOG_WARNING << "Buffer::setEndOfFile() anomaly: EOF already is true";
         return;
     }
 

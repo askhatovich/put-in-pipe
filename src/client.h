@@ -94,7 +94,7 @@ private:
     std::string m_joinedSession;
     std::string m_name;
     std::weak_ptr<WebSocketConnection> m_webSocketConnection;
-    size_t m_currentChunkIndex = 0;
+    std::atomic<size_t> m_currentChunkIndex = 0;
     std::atomic<size_t> m_bytesReceived = 0;
     mutable std::shared_mutex m_mutex;
     TimerCallback m_wsTimeoutTimer;

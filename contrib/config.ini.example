@@ -1,0 +1,29 @@
+[server]
+; Log level: verbose, debug, info, warning, error, fatal, none
+log_level = info
+bind_address = 0.0.0.0
+bind_port = 2233
+
+[client]
+; Maximum number of simultaneous clients
+max_count = 500
+; Number of clients before captcha is required
+without_captcha_threshold = 500
+; Captcha expiration time in seconds
+captcha_lifetime = 180
+; Client timeout in seconds (disconnected without websocket)
+timeout = 60
+
+[session]
+; Maximum number of simultaneous transfer sessions
+count_limit = 100
+; Maximum chunk size in bytes (default: 5 MB)
+max_chunk_size = 5242880
+; Maximum number of chunks in the buffer queue
+chunk_queue_max_size = 10
+; Session lifetime in seconds (default: 2 hours)
+max_lifetime = 7200
+; Maximum number of receivers per session
+max_consumer_count = 5
+; Initial freeze duration in seconds (time to wait for receivers)
+max_initial_freeze_duration = 120
