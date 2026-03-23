@@ -25,8 +25,14 @@ WebAPI::WebAPI()
 void WebAPI::run()
 {
     const auto& cfg = Config::instance();
-    m_app.websocket_max_payload(cfg.transferSessionMaxChunkSize());
+    // Extra margin for encryption overhead (nonce + auth tag) and JSON framing
+    m_app.websocket_max_payload(cfg.transferSessionMaxChunkSize() + 256);
     m_app.bindaddr(cfg.bindAddress()).port(cfg.bindPort()).multithreaded().run();
+}
+
+void WebAPI::stop()
+{
+    m_app.stop();
 }
 
 void WebAPI::initRoutes()
@@ -36,7 +42,19 @@ void WebAPI::initRoutes()
     CROW_ROUTE(m_app, "/").methods("GET"_method)
     ([](const crow::request& req, crow::response& resp) {
         static const std::string html = getIndexHtml();
+        static const std::string etag = "\"" + std::to_string(std::hash<std::string>{}(html)) + "\"";
+
+        const auto ifNoneMatch = req.get_header_value("If-None-Match");
+        if (ifNoneMatch == etag)
+        {
+            resp.code = 304;
+            resp.end();
+            return;
+        }
+
         resp.set_header("Content-Type", "text/html; charset=utf-8");
+        resp.set_header("ETag", etag);
+        resp.set_header("Cache-Control", "no-cache");
         resp.body = html;
         resp.end();
     });
@@ -821,6 +839,7 @@ void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &d
     PLOG_VERBOSE << "WS isBinary=" << isBinary << " size=" << data.size();
 
     auto wsWrapperPtr = static_cast<WsRaiiWrapper*>(conn.userdata());
+    if (wsWrapperPtr == nullptr) return;
     auto client = wsWrapperPtr->client().lock();
     if (client == nullptr)
     {
@@ -997,6 +1016,16 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
         }
 
         session->manualTerminate();
+    }
+    else if (action == "drop_freeze") // creator only
+    {
+        const auto creatorSp = session->sender().lock();
+        if (creatorSp == nullptr or creatorSp->id() != client->id())
+        {
+            return;
+        }
+
+        session->dropInitialChunksFreeze();
     }
     else if (action == "new_name")
     {

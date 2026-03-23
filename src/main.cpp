@@ -11,6 +11,7 @@
 #include <string>
 #include <cstring>
 #include <algorithm>
+#include <csignal>
 
 static plog::Severity parseLogLevel(const std::string& str)
 {
@@ -166,6 +167,14 @@ int main(int argc, char* argv[])
     PLOG_INFO << "Listening on " << cfg.bindAddress() << ":" << cfg.bindPort();
 
     WebAPI webInterface;
+
+    auto signalHandler = [](int sig) {
+        PLOG_INFO << "Received signal " << sig << ", shutting down...";
+        std::_Exit(0);
+    };
+    std::signal(SIGINT, signalHandler);
+    std::signal(SIGTERM, signalHandler);
+
     webInterface.run();
 
     return 0;

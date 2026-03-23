@@ -101,6 +101,13 @@ bool TransferSession::addReceiver(std::shared_ptr<Client> client)
             }
         }
 
+        // Cross-subscribe sender ↔ new receiver for online/offline events
+        if (auto spSender = m_dataSender.lock())
+        {
+            client->Publisher<Event::ClientsDirect>::addSubscriber(spSender);
+            spSender->Publisher<Event::ClientsDirect>::addSubscriber(client);
+        }
+
         m_dataReceivers.push_back(client);
 
         client->Publisher<Event::ClientInternal>::addSubscriber(shared_from_this());
@@ -119,37 +126,47 @@ bool TransferSession::addReceiver(std::shared_ptr<Client> client)
 void TransferSession::removeReceiver(const std::string &publicId)
 {
     PLOG_INFO << "Session " << m_id << ": removing receiver " << publicId;
-    std::unique_lock lock (m_receiversMutex);
 
     /*
-     * If the event was triggered manually, the client will be explicitly deleted.
-     * If the event is triggered after the natural deletion of the client,
-     * the others will simply receive a notification.
+     * Collect the client shared_ptr under lock, then release the lock
+     * before destroying the client — the client destructor notifies
+     * subscribers which can re-enter removeReceiver, causing deadlock
+     * if the mutex is still held.
      */
 
-    for (auto iter = m_dataReceivers.begin(), end = m_dataReceivers.end(); iter != end; ++iter)
+    std::shared_ptr<Client> removedClient;
+    bool noReceiversLeft = false;
+
     {
-        if (auto spReceiver = iter->lock())
+        std::unique_lock lock (m_receiversMutex);
+
+        for (auto iter = m_dataReceivers.begin(), end = m_dataReceivers.end(); iter != end; ++iter)
         {
-            if (spReceiver->publicId() != publicId)
+            if (auto spReceiver = iter->lock())
             {
-                continue;
+                if (spReceiver->publicId() != publicId)
+                {
+                    continue;
+                }
+
+                removedClient = spReceiver;
+                m_dataReceivers.erase(iter);
+                break;
             }
-
-            m_dataReceivers.erase(iter);
-            ClientList::instanse().remove(spReceiver->id());
-
-            break; // no any job after iter erase!
         }
+
+        noReceiversLeft = m_dataReceivers.empty() and m_buffer.someChunksWasRemoved();
     }
 
-    if (m_dataReceivers.empty() and m_buffer.someChunksWasRemoved())
+    // Destroy client outside the lock to avoid deadlock
+    if (removedClient)
     {
-        /*
-         * All recipients have left, new ones are not possible,
-         * because the initial part of the file has already been lost.
-         */
+        ClientList::instanse().remove(removedClient->id());
+        removedClient.reset();
+    }
 
+    if (noReceiversLeft)
+    {
         PLOG_INFO << "Session " << m_id << ": no receivers left, terminating";
         m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
         TransferSessionList::instanse().remove(m_id);
@@ -180,7 +197,18 @@ bool TransferSession::setFileInfo(const FileInfo &info)
     std::unique_lock lock (m_fileInfoMutex);
 
     m_fileInfo = info;
-    crow::utility::sanitize_filename(m_fileInfo.name);
+
+    // Remove path separators and control characters, preserving UTF-8 multibyte sequences
+    std::string& name = m_fileInfo.name;
+    for (size_t i = 0; i < name.size(); ++i)
+    {
+        unsigned char c = name[i];
+        if (c < 0x20 || c == '/' || c == '\\' || c == ':' || c == '*'
+            || c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+        {
+            name[i] = '_';
+        }
+    }
 
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::fileInfoUpdated, m_fileInfo);
 
@@ -308,12 +336,13 @@ void TransferSession::setEndOfFile()
 
 void TransferSession::dropInitialChunksFreeze()
 {
-    if (not m_buffer.setInitialChunksFreezingDropped())
+    std::list<size_t> removedChunks;
+    if (not m_buffer.setInitialChunksFreezingDropped(removedChunks))
     {
         return;
     }
 
-    PLOG_INFO << "Session " << m_id << ": initial freeze dropped";
+    PLOG_INFO << "Session " << m_id << ": initial freeze dropped, " << removedChunks.size() << " chunks freed";
 
     bool shouldRemove = false;
     {
@@ -338,7 +367,22 @@ void TransferSession::dropInitialChunksFreeze()
         return;
     }
 
+    if (not removedChunks.empty())
+    {
+        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
+    }
+
+    const auto newAllowed = m_buffer.newChunkIsAllowed();
+    Publisher<Event::TransferSessionForSender>::notifySubscribers(Event::TransferSessionForSender::newChunkIsAllowed, newAllowed);
+
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksAreUnfrozen, nullptr);
+
+    // Check if transfer is already complete (all chunks confirmed during freeze)
+    if (m_buffer.chunkCount() == 0 and m_buffer.eof())
+    {
+        PLOG_INFO << "Session " << m_id << ": transfer complete (all confirmed during freeze)";
+        TransferSessionList::instanse().remove(m_id);
+    }
 }
 
 std::chrono::seconds TransferSession::remainingUntilAutoDropInitialFreeze() const

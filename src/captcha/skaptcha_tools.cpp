@@ -27,7 +27,7 @@ std::string skaptcha_tools::base64::encodeUrlsafe(const std::string &data)
 
 std::string skaptcha_tools::base64::encodeUrlsafe(const char *data, size_t length)
 {
-    return crow::utility::base64encode_urlsafe(data, length);
+    return crow::utility::base64encode_urlsafe(reinterpret_cast<const unsigned char*>(data), length);
 }
 
 std::vector<std::string> skaptcha_tools::string::split(const std::string &str, char delimiter)

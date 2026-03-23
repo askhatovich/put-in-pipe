@@ -199,7 +199,7 @@ size_t Buffer::expectedConsumerCount() const
     return m_expectedConsumers->size();
 }
 
-bool Buffer::setInitialChunksFreezingDropped()
+bool Buffer::setInitialChunksFreezingDropped(std::list<size_t>& removedChunks)
 {
     std::unique_lock lock(m_sharedMtx);
 
@@ -209,6 +209,10 @@ bool Buffer::setInitialChunksFreezingDropped()
     }
 
     m_initialChunksFreezing = false;
+
+    // Clean up chunks that were confirmed during freeze
+    sanitize(removedChunks);
+
     return true;
 }
 

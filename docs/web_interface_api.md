@@ -603,7 +603,20 @@ The session creator cannot delete himself, it will be an error.
 }
 ```
 
-#### A1.5 Sending a new chunk
+#### A1.5 Drop initial freeze
+
+Manually drops the initial chunk freeze. While the freeze is active, chunks are not removed from the buffer even after all current receivers have downloaded them. This allows new receivers to join and get the initial data. Once the freeze is dropped (either manually or by timeout), chunks will start being freed after confirmation, allowing the transfer to progress.
+
+```
+{
+  "action": "drop_freeze",
+  "data": {}
+}
+```
+
+If the freeze has already been dropped, the action is silently ignored.
+
+#### A1.6 Sending a new chunk
 
 The session creator can send binary data. They will be treated as a new chunk and added to the session buffer. If adding to the buffer failed, an individual event will be returned:
 

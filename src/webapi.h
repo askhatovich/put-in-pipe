@@ -38,6 +38,7 @@ class WebAPI
 public:
     WebAPI();
     void run();
+    void stop();
 
 private:
     using WsRaiiWrapper = WebSocketConnectionDetails::WebSocketConnectionRAIIWrapper;

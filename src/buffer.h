@@ -49,7 +49,7 @@ public:
     void setEndOfFile();
     bool eof() const;
 
-    bool setInitialChunksFreezingDropped();
+    bool setInitialChunksFreezingDropped(std::list<size_t>& removedChunks);
     bool initialChunksFreezing() const;
 
     bool someChunksWasRemoved() const;
