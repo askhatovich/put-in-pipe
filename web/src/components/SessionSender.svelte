@@ -117,6 +117,26 @@
         bufferUsed = Math.max(0, bufferUsed - removed);
     }
 
+    // Resync state after WS reconnect (server sends fresh start_init)
+    function onReconnectInit(msg) {
+        const state = msg.data?.state;
+        if (!state) return;
+        bufferUsed = Array.isArray(state.chunks) ? state.chunks.length : 0;
+        canSendChunk = bufferUsed < bufferMax;
+
+        // Unstick pending promises so the upload loop can continue
+        if (chunkAcceptedResolve) {
+            const resolve = chunkAcceptedResolve;
+            chunkAcceptedResolve = null;
+            resolve();
+        }
+        if (chunkAllowedResolve && canSendChunk) {
+            const resolve = chunkAllowedResolve;
+            chunkAllowedResolve = null;
+            resolve();
+        }
+    }
+
     function onBytesCount(msg) {
         const d = msg.data || msg;
         if (d.direction === 'from_sender') {
@@ -165,6 +185,7 @@
         on('complete', onComplete);
         on('online', onOnline);
         on('close', onWsClose);
+        on('start_init', onReconnectInit);
 
         return () => {
             off('new_receiver', onNewReceiver);
@@ -179,6 +200,7 @@
             off('complete', onComplete);
             off('online', onOnline);
             off('close', onWsClose);
+            off('start_init', onReconnectInit);
         };
     });
 
@@ -267,7 +289,8 @@
 
     let frozen = $state(sessionData?.state?.initial_freeze ?? true);
     let freezeMaxSec = sessionData?.limits?.max_initial_freeze || 120;
-    let freezeRemaining = $state(freezeMaxSec);
+    let freezeInitialRemaining = sessionData?.state?.initial_freeze_remaining ?? freezeMaxSec;
+    let freezeRemaining = $state(freezeInitialRemaining);
     let freezeProgress = $derived(frozen ? freezeRemaining / freezeMaxSec : 0);
 
     // Countdown timer for freeze
@@ -516,6 +539,16 @@
     @media (max-width: 640px) {
         .session {
             grid-template-columns: 1fr;
+            max-width: 100%;
+            padding: 0.75rem;
+        }
+
+        .link-row {
+            flex-wrap: wrap;
+        }
+
+        .link-row input {
+            min-width: 0;
         }
     }
 </style>

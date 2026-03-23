@@ -125,9 +125,7 @@
     .file-name {
         color: #eee;
         font-size: 0.95rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        word-break: break-all;
         flex: 1;
         margin-right: 0.5rem;
     }

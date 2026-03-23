@@ -55,6 +55,7 @@
 
     function onUploadFinished() {
         uploadFinished = true;
+        checkIfDone();
     }
 
     function onNewReceiver(msg) {
@@ -94,6 +95,23 @@
         receivers = receivers.map(r =>
             r.id === d.id ? { ...r, current_chunk: d.index } : r
         );
+    }
+
+    // Resync after WS reconnect — fetch any chunks we missed while disconnected
+    function onReconnectInit(msg) {
+        const state = msg.data?.state;
+        if (!state) return;
+        if (state.upload_finished) uploadFinished = true;
+        const serverChunks = state.chunks;
+        if (serverChunks && Array.isArray(serverChunks)) {
+            (async () => {
+                for (const c of serverChunks) {
+                    if (c.index > highestKnownChunk) highestKnownChunk = c.index;
+                    await fetchAndDecryptChunk(c.index);
+                }
+                checkIfDone();
+            })();
+        }
     }
 
     async function fetchAndDecryptChunk(index, retries = 3) {
@@ -219,6 +237,7 @@
         on('online', onOnline);
         on('personal_received', onPersonalReceived);
         on('close', onWsClose);
+        on('start_init', onReconnectInit);
 
         return () => {
             off('file_info', onFileInfo);
@@ -232,6 +251,7 @@
             off('online', onOnline);
             off('personal_received', onPersonalReceived);
             off('close', onWsClose);
+            off('start_init', onReconnectInit);
         };
     });
 
@@ -325,6 +345,8 @@
     @media (max-width: 640px) {
         .session {
             grid-template-columns: 1fr;
+            max-width: 100%;
+            padding: 0.75rem;
         }
     }
 </style>

@@ -75,7 +75,9 @@
         text-align: center;
         padding: 2rem 1rem;
         max-width: 440px;
+        width: 100%;
         margin: 0 auto;
+        box-sizing: border-box;
     }
 
     .title {

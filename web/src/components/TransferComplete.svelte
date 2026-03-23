@@ -10,17 +10,19 @@
     });
     function tt(key) { langTick; return t(key); }
 
-    let blobUrl = $state(null);
-
-    $effect(() => {
-        if (blob) {
-            const url = URL.createObjectURL(blob);
-            blobUrl = url;
-            return () => URL.revokeObjectURL(url);
-        } else {
-            blobUrl = null;
-        }
-    });
+    function triggerDownload() {
+        if (!blob) return;
+        const name = fileName || 'download';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
 
     function statusMessage(s) {
         switch (s) {
@@ -44,10 +46,10 @@
         {statusMessage(status)}
     </h2>
 
-    {#if blob && blobUrl}
-        <a class="download-btn" href={blobUrl} download={fileName}>
+    {#if blob}
+        <button class="download-btn" onclick={triggerDownload}>
             {tt('downloadFile')}
-        </a>
+        </button>
         {#if fileName}
             <div class="file-name">{fileName}</div>
         {/if}
@@ -104,10 +106,12 @@
         padding: 0.7rem 2rem;
         background: #4caf50;
         color: #fff;
-        text-decoration: none;
+        border: none;
         border-radius: 4px;
         font-size: 1rem;
+        font-family: inherit;
         margin-bottom: 0.5rem;
+        cursor: pointer;
         transition: background 0.2s;
     }
 

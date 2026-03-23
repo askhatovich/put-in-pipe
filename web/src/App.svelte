@@ -15,6 +15,45 @@
 
     let langTick = $state(0);
     i18nSubscribe(() => langTick++);
+    function tt(key) { langTick; return t(key); }
+
+    // --- IndexedDB helpers for cross-reload blob passing ---
+    function openDlDB() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open('pip-dl', 1);
+            req.onupgradeneeded = () => req.result.createObjectStore('f');
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function savePendingDl(blob, name) {
+        const db = await openDlDB();
+        await new Promise((res, rej) => {
+            const tx = db.transaction('f', 'readwrite');
+            tx.objectStore('f').put({ blob, name, ts: Date.now() }, 'p');
+            tx.oncomplete = () => { db.close(); res(); };
+            tx.onerror = () => { db.close(); rej(tx.error); };
+        });
+    }
+    async function loadPendingDl() {
+        try {
+            const db = await openDlDB();
+            return await new Promise((res) => {
+                const tx = db.transaction('f', 'readonly');
+                const r = tx.objectStore('f').get('p');
+                r.onsuccess = () => { db.close(); res(r.result || null); };
+                r.onerror = () => { db.close(); res(null); };
+            });
+        } catch { return null; }
+    }
+    async function clearPendingDl() {
+        try {
+            const db = await openDlDB();
+            const tx = db.transaction('f', 'readwrite');
+            tx.objectStore('f').delete('p');
+            tx.oncomplete = () => db.close();
+        } catch {}
+    }
 
     // 'loading', 'entry', 'file_select', 'captcha', 'connecting', 'sender', 'receiver', 'complete'
     let screen = $state('loading');
@@ -52,6 +91,22 @@
 
     async function init() {
         await initCrypto();
+
+        // Check for pending download saved before reload
+        const pending = await loadPendingDl();
+        if (pending && (Date.now() - pending.ts) < 60000) {
+            await clearPendingDl();
+            completeBlob = pending.blob;
+            completeFileName = pending.name;
+            completeStatus = 'ok';
+            userName = getOrGenerateName();
+            pollStats();
+            statsInterval = setInterval(pollStats, 5000);
+            screen = 'complete';
+            return;
+        }
+        await clearPendingDl();
+
         pollStats();
         statsInterval = setInterval(pollStats, 5000);
 
@@ -239,11 +294,29 @@
         });
     }
 
-    function handleComplete({ status, blob }) {
+    function needsReloadForBlobDownload() {
+        const ua = navigator.userAgent;
+        // Mobile Chromium-based browsers (not Firefox) have issues with blob URL downloads
+        return /Android/.test(ua) && !/Firefox/.test(ua);
+    }
+
+    async function handleComplete({ status, blob }) {
         disconnect();
+        const name = sessionData?.state?.file?.name || 'download';
+
+        // Only mobile Chromium needs the reload trick for blob downloads
+        if (status === 'ok' && blob && needsReloadForBlobDownload()) {
+            try {
+                await savePendingDl(blob, name);
+                clearAnchor();
+                window.location.reload();
+                return;
+            } catch { /* IndexedDB unavailable, fall through */ }
+        }
+
         completeStatus = status;
         completeBlob = blob || null;
-        completeFileName = sessionData?.state?.file?.name || 'download';
+        completeFileName = name;
         screen = 'complete';
     }
 
@@ -293,15 +366,15 @@
             {/if}
         {:else if screen === 'file_select'}
             <div class="file-select-screen">
-                <h2>{t('selectFile')}</h2>
+                <h2>{tt('selectFile')}</h2>
                 <label class="file-picker">
                     <input type="file" onchange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) handleFileSelected(f);
                     }} />
-                    <span class="file-picker-label">{pendingFile ? pendingFile.name : t('selectFile')}</span>
+                    <span class="file-picker-label">{pendingFile ? pendingFile.name : tt('selectFile')}</span>
                 </label>
-                <button class="back-btn" onclick={handleBackToEntry}>{t('startOver')}</button>
+                <button class="back-btn" onclick={handleBackToEntry}>{tt('startOver')}</button>
             </div>
         {:else if screen === 'captcha'}
             <Captcha
@@ -368,6 +441,14 @@
         align-items: center;
         justify-content: center;
         padding: 2rem;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    @media (max-width: 480px) {
+        main {
+            padding: 1rem 0.75rem;
+        }
     }
 
     .center {
