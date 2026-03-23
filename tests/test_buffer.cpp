@@ -145,7 +145,8 @@ TEST_F(BufferTest, SetChunkAsReceivedTriggersCleanup) {
     EXPECT_EQ(buffer.expectedConsumerCount(), 1u);
 
     // Drop freeze so sanitize can actually remove chunks
-    buffer.setInitialChunksFreezingDropped();
+    std::list<size_t> removedChunks;
+    buffer.setInitialChunksFreezingDropped(removedChunks);
     EXPECT_FALSE(buffer.initialChunksFreezing());
 
     // Add a chunk
@@ -155,7 +156,6 @@ TEST_F(BufferTest, SetChunkAsReceivedTriggersCleanup) {
     EXPECT_EQ(buffer.chunkCount(), 1u);
 
     // Mark chunk as received by the only consumer
-    std::list<size_t> removedChunks;
     bool result = buffer.setChunkAsReceived(index, removedChunks);
     EXPECT_TRUE(result);
 
@@ -218,7 +218,8 @@ TEST_F(BufferTest, AddConsumerRejectsAfterChunksRemoved) {
     EXPECT_TRUE(buffer.addNewToExpectedConsumers("consumer1"));
 
     // Drop freeze and add a chunk, then have consumer receive it so it gets removed
-    buffer.setInitialChunksFreezingDropped();
+    std::list<size_t> freezeRemoved;
+    buffer.setInitialChunksFreezingDropped(freezeRemoved);
 
     std::string data(100, 'A');
     size_t index = buffer.addChunk(data);
@@ -256,11 +257,12 @@ TEST_F(BufferTest, InitialChunksFreezingPreventsRemoval) {
 // setInitialChunksFreezingDropped works
 TEST_F(BufferTest, SetInitialChunksFreezingDropped) {
     EXPECT_TRUE(buffer.initialChunksFreezing());
-    EXPECT_TRUE(buffer.setInitialChunksFreezingDropped());
+    std::list<size_t> removedChunks;
+    EXPECT_TRUE(buffer.setInitialChunksFreezingDropped(removedChunks));
     EXPECT_FALSE(buffer.initialChunksFreezing());
 
     // Second call returns false
-    EXPECT_FALSE(buffer.setInitialChunksFreezingDropped());
+    EXPECT_FALSE(buffer.setInitialChunksFreezingDropped(removedChunks));
 }
 
 // bytesIn tracking
@@ -299,7 +301,8 @@ TEST_F(BufferTest, RemoveConsumerTriggersCleanup) {
     EXPECT_TRUE(buffer.addNewToExpectedConsumers("consumer2"));
     EXPECT_EQ(buffer.expectedConsumerCount(), 2u);
 
-    buffer.setInitialChunksFreezingDropped();
+    std::list<size_t> freezeRemoved;
+    buffer.setInitialChunksFreezingDropped(freezeRemoved);
 
     std::string data(100, 'A');
     size_t idx = buffer.addChunk(data);
@@ -321,7 +324,8 @@ TEST_F(BufferTest, RemoveConsumerTriggersCleanup) {
 // Multiple chunks with consumer removal
 TEST_F(BufferTest, RemoveConsumerCleanupMultipleChunks) {
     EXPECT_TRUE(buffer.addNewToExpectedConsumers("consumer1"));
-    buffer.setInitialChunksFreezingDropped();
+    std::list<size_t> freezeRemoved;
+    buffer.setInitialChunksFreezingDropped(freezeRemoved);
 
     std::string data(50, 'D');
     size_t idx1 = buffer.addChunk(data);
