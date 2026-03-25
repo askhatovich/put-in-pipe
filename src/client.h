@@ -65,6 +65,7 @@ public:
     std::string publicId() const { return m_publicId; }
     std::string name() const;
     size_t currentChunkIndex() const { return m_currentChunkIndex; }
+    void setCurrentChunkIndex(size_t index) { m_currentChunkIndex = index; }
     bool online() const;
     void dropCurrentWsConnection();
     size_t bytesReceived() const { return m_bytesReceived; }

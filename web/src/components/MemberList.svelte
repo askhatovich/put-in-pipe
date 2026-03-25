@@ -1,7 +1,7 @@
 <script>
     import { t, subscribe } from '$lib/i18n.js';
 
-    let { sender = null, receivers = [], isSender = false, onkick } = $props();
+    let { sender = null, receivers = [], isSender = false, myId = '', onkick } = $props();
 
     let langTick = $state(0);
     $effect(() => {
@@ -47,8 +47,7 @@
         {#if sender}
             <div class="member" class:flash={flashIds.has(sender.id)}>
                 <span class="dot" class:online={sender.is_online}></span>
-                <span class="name">{sender.name}</span>
-                <span class="status">{sender.is_online ? tt('online') : tt('offline')}</span>
+                <span class="name" class:me={isSender}>{sender.name}</span>
             </div>
         {:else}
             <div class="muted">...</div>
@@ -62,12 +61,13 @@
         {:else}
             {#each receivers as receiver (receiver.id)}
                 <div class="member" class:flash={flashIds.has(receiver.id)}>
-                    <span class="dot" class:online={receiver.is_online}></span>
-                    <span class="name">{receiver.name}</span>
-                    <span class="status">{receiver.is_online ? tt('online') : tt('offline')}</span>
-                    {#if receiver.current_chunk !== undefined && receiver.current_chunk > 0}
-                        <span class="chunk-info">#{receiver.current_chunk}</span>
+                    {#if receiver.done}
+                        <span class="checkmark">&#10003;</span>
+                    {:else}
+                        <span class="dot" class:online={receiver.is_online}></span>
                     {/if}
+                    <span class="name" class:me={receiver.id === myId}>{receiver.name}</span>
+                    <span class="chunk-info">#{receiver.current_chunk || 0}</span>
                     {#if isSender}
                         <button class="kick-btn" onclick={() => onkick?.({ id: receiver.id })}>
                             &times;
@@ -143,15 +143,23 @@
         white-space: nowrap;
     }
 
-    .status {
-        color: #666;
-        font-size: 0.75rem;
+    .name.me {
+        color: #7dcea0;
     }
 
     .chunk-info {
         color: #999;
         font-size: 0.75rem;
         font-family: monospace;
+    }
+
+    .checkmark {
+        color: #4caf50;
+        font-size: 0.9rem;
+        font-weight: bold;
+        flex-shrink: 0;
+        width: 8px;
+        text-align: center;
     }
 
     .kick-btn {

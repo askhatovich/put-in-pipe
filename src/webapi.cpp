@@ -116,7 +116,8 @@ void WebAPI::currentStatistics(const crow::request &req, crow::response &res)
         {"current_user_count", ClientList::instanse().count()},
         {"current_session_count", TransferSessionList::instanse().count()},
         {"max_user_count", cfg.apiMaxClientCount()},
-        {"max_session_count", cfg.transferSessionCountLimit()}
+        {"max_session_count", cfg.transferSessionCountLimit()},
+        {"version", APP_VERSION}
     };
 
     res.code = 200;
@@ -1049,6 +1050,7 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
     else if (action == "confirm_chunk")
     {
         const size_t chunkId = data["index"].u();
+        client->setCurrentChunkIndex(chunkId);
         session->setChunkAsReceived(chunkId, client);
     }
     else

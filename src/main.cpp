@@ -144,6 +144,12 @@ int main(int argc, char* argv[])
             return 0;
         }
 
+        if (matchOption(argv[i], "-v", "--version"))
+        {
+            std::cout << "put-in-pipe " << APP_VERSION << std::endl;
+            return 0;
+        }
+
         if (matchOption(argv[i], "-c", "--config"))
         {
             if (i + 1 >= argc)

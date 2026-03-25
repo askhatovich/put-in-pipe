@@ -21,7 +21,7 @@
 
 <footer>
     <span class="stats">{statsText()}</span>
-    <span class="copy"><a href="https://github.com/askhatovich/put-in-pipe" target="_blank" rel="noopener">Put-In-Pipe</a> &copy; 2025-2026</span>
+    <span class="copy"><a href="https://github.com/askhatovich/put-in-pipe" target="_blank" rel="noopener">Put-In-Pipe</a>&#32;{#if stats?.version}{stats.version}&#32;{/if}&#32;&copy; 2026</span>
     <span class="lang">
         <button class:active={currentLang === 'en'} onclick={() => setLang('en')}>EN</button>
         <span class="sep">|</span>

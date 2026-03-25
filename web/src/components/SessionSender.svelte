@@ -27,6 +27,8 @@
         Array.isArray(sessionData?.state?.chunks) ? sessionData.state.chunks.length : 0
     );
     let chunksSent = $state(0);
+    let highestChunkIndex = $state(0);
+    let receiverChunksDone = $state({});
     let linkCopied = $state(false);
     let showQR = $state(false);
     let sessionExpirationIn = $state(sessionData?.state?.expiration_in || 0);
@@ -92,9 +94,14 @@
 
     function onChunkDownload(msg) {
         const d = msg.data || msg;
+        if (d.action === 'finished') {
+            receiverChunksDone = { ...receiverChunksDone, [d.id]: (receiverChunksDone[d.id] || 0) + 1 };
+        }
         receivers = receivers.map(r => {
             if (r.id === d.id) {
-                return { ...r, current_chunk: d.index };
+                const done = uploadFinished && highestChunkIndex > 0
+                    && (receiverChunksDone[d.id] || 0) >= highestChunkIndex;
+                return { ...r, current_chunk: d.index, done };
             }
             return r;
         });
@@ -111,6 +118,8 @@
     }
 
     function onNewChunkEvent(msg) {
+        const d = msg.data || msg;
+        if (d.index > highestChunkIndex) highestChunkIndex = d.index;
         // Server confirmed a chunk was added to buffer
         bufferUsed++;
         if (chunkAcceptedResolve) {
@@ -338,6 +347,7 @@
             sender={senderInfo}
             {receivers}
             isSender={true}
+            {myId}
             onkick={handleKick}
         />
         {#if frozen && receivers.length > 0}

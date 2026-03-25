@@ -1,7 +1,7 @@
 <script>
     import { t, subscribe } from '$lib/i18n.js';
 
-    let { name: initialName = '', onstart, onjoinlink } = $props();
+    let { name: initialName = '', onfileselected, onjoinlink } = $props();
 
     let langTick = $state(0);
     $effect(() => {
@@ -13,6 +13,23 @@
     let name = $state(initialName);
     let linkInput = $state('');
     let linkError = $state('');
+    let dragging = $state(false);
+
+    function handleFiles(files) {
+        const f = files?.[0];
+        if (f) onfileselected?.(f);
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        dragging = false;
+        handleFiles(e.dataTransfer?.files);
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        dragging = true;
+    }
 
     function handleJoinLink() {
         linkError = '';
@@ -36,14 +53,19 @@
     <h1 class="title">Put-In-Pipe</h1>
     <p class="subtitle">{tt('encrypted')}</p>
 
-    <div class="buttons">
-        <button
-            class="btn-send"
-            onclick={() => onstart?.({ role: 'sender', name: name.trim() })}
-        >
-            {tt('sendFile')}
-        </button>
-    </div>
+    <label
+        class="drop-zone"
+        class:dragging
+        role="button"
+        tabindex="0"
+        ondrop={handleDrop}
+        ondragover={handleDragOver}
+        ondragleave={() => dragging = false}
+    >
+        <input type="file" onchange={(e) => handleFiles(e.target.files)} />
+        <span class="drop-icon">+</span>
+        <span class="drop-text">{tt('sendFile')}</span>
+    </label>
 
     <div class="divider"></div>
 
@@ -92,29 +114,43 @@
         margin: 0 0 2rem 0;
     }
 
-    .buttons {
+    .drop-zone {
         display: flex;
-        gap: 0.75rem;
+        flex-direction: column;
+        align-items: center;
         justify-content: center;
-    }
-
-    .buttons button {
-        padding: 0.7rem 2rem;
-        border: none;
-        border-radius: 4px;
+        gap: 0.5rem;
+        padding: 2rem;
+        border: 2px dashed #0f3460;
+        border-radius: 8px;
         cursor: pointer;
-        font-size: 0.95rem;
-        font-family: inherit;
-        transition: background 0.2s;
+        transition: border-color 0.2s, background 0.2s;
+        background: transparent;
     }
 
-    .btn-send {
-        background: #0f3460;
-        color: #eee;
+    .drop-zone:hover, .drop-zone.dragging {
+        border-color: #e94560;
+        background: rgba(233, 69, 96, 0.05);
     }
 
-    .btn-send:hover {
-        background: #1a4a80;
+    .drop-zone input[type="file"] {
+        display: none;
+    }
+
+    .drop-icon {
+        font-size: 2rem;
+        color: #0f3460;
+        line-height: 1;
+        transition: color 0.2s;
+    }
+
+    .drop-zone:hover .drop-icon, .drop-zone.dragging .drop-icon {
+        color: #e94560;
+    }
+
+    .drop-text {
+        color: #999;
+        font-size: 0.9rem;
     }
 
     .divider {

@@ -26,18 +26,31 @@ TransferSession::~TransferSession()
 
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::complete, m_completeType);
 
-    for (auto& receiver: m_dataReceivers)
+    // Collect client IDs for delayed removal.
+    // Delay ensures the "complete" event text frame is delivered
+    // before the WS close frame (which is sent by Client destructor).
+    std::vector<std::string> clientIds;
+    for (auto& receiver : m_dataReceivers)
     {
         if (auto sp = receiver.lock())
         {
-            ClientList::instanse().remove(sp->id());
+            clientIds.push_back(sp->id());
         }
     }
-
     if (auto sp = m_dataSender.lock())
     {
-        ClientList::instanse().remove(sp->id());
+        clientIds.push_back(sp->id());
     }
+
+    auto timer = std::make_shared<asio::steady_timer>(m_ioContext);
+    timer->expires_after(std::chrono::seconds(1));
+    timer->async_wait([timer, clientIds](const asio::error_code& ec) {
+        if (ec) return;
+        for (const auto& id : clientIds)
+        {
+            ClientList::instanse().remove(id);
+        }
+    });
 }
 
 void TransferSession::initTimers(std::shared_ptr<TransferSession> me)
@@ -140,22 +153,34 @@ void TransferSession::removeReceiver(const std::string &publicId)
     {
         std::unique_lock lock (m_receiversMutex);
 
-        for (auto iter = m_dataReceivers.begin(), end = m_dataReceivers.end(); iter != end; ++iter)
+        for (auto iter = m_dataReceivers.begin(); iter != m_dataReceivers.end(); )
         {
             if (auto spReceiver = iter->lock())
             {
-                if (spReceiver->publicId() != publicId)
+                if (spReceiver->publicId() == publicId)
                 {
+                    removedClient = spReceiver;
+                    iter = m_dataReceivers.erase(iter);
                     continue;
                 }
-
-                removedClient = spReceiver;
-                m_dataReceivers.erase(iter);
-                break;
+                ++iter;
+            }
+            else
+            {
+                // Expired weak_ptr — client already destroyed, clean up
+                iter = m_dataReceivers.erase(iter);
             }
         }
 
-        noReceiversLeft = m_dataReceivers.empty() and m_buffer.someChunksWasRemoved();
+        noReceiversLeft = m_dataReceivers.empty();
+    }
+
+    // Remove from expected consumers and sanitize buffer
+    std::list<size_t> removedChunks;
+    m_buffer.removeOneFromExpectedConsumers(publicId, removedChunks);
+    if (not removedChunks.empty())
+    {
+        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
     }
 
     // Destroy client outside the lock to avoid deadlock
@@ -165,21 +190,18 @@ void TransferSession::removeReceiver(const std::string &publicId)
         removedClient.reset();
     }
 
-    if (noReceiversLeft)
+    Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::receiverRemoved, publicId);
+
+    // Terminate if no receivers left and session can't accept new ones:
+    // - chunks were removed (new receiver can't get full file), or
+    // - freeze was already dropped (chunks will be removed on next confirm)
+    if (noReceiversLeft and (m_buffer.someChunksWasRemoved() or not m_buffer.initialChunksFreezing()))
     {
         PLOG_INFO << "Session " << m_id << ": no receivers left, terminating";
         m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
         TransferSessionList::instanse().remove(m_id);
         return;
     }
-
-    std::list<size_t> removedChunks;
-    m_buffer.removeOneFromExpectedConsumers(publicId, removedChunks);
-    if (not removedChunks.empty())
-    {
-        Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
-    }
-    Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::receiverRemoved, publicId);
 }
 
 bool TransferSession::setFileInfo(const FileInfo &info)
@@ -403,7 +425,16 @@ void TransferSession::update(Event::ClientInternal event, std::any data)
             {
                 if (m_buffer.eof())
                 {
-                    // file fully uploaded - sender's fault is ignored
+                    // File fully uploaded. If no receivers left, terminate —
+                    // otherwise let session continue for remaining receivers.
+                    std::shared_lock lock(m_receiversMutex);
+                    if (m_dataReceivers.empty())
+                    {
+                        PLOG_INFO << "Session " << m_id << ": sender left after upload, no receivers, terminating";
+                        m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
+                        lock.unlock();
+                        TransferSessionList::instanse().remove(m_id);
+                    }
                     return;
                 }
 

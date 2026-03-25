@@ -72,6 +72,7 @@
     let completeStatus = $state('');
     let completeBlob = $state(null);
     let completeFileName = $state('');
+    let finalizing = $state(false);
 
     let statsInterval;
     async function pollStats() {
@@ -180,10 +181,6 @@
 
     // --- Entry handlers ---
 
-    function handleSendClicked() {
-        screen = 'file_select';
-    }
-
     async function handleJoinLink({ id, key, encryption }) {
         const SUPPORTED = ['xchacha20-poly1305'];
         if (!SUPPORTED.includes(encryption)) {
@@ -203,15 +200,6 @@
         pendingRole = 'sender';
         screen = 'connecting';
         await identifyAndProceed(userName, 'sender');
-    }
-
-    async function handleStart({ role, name }) {
-        if (role === 'sender') {
-            handleSendClicked();
-        } else {
-            screen = 'connecting';
-            await identifyAndProceed(name, role);
-        }
     }
 
     function handleCaptchaSolved() {
@@ -294,9 +282,40 @@
         return /Android/.test(ua) && !/Firefox/.test(ua);
     }
 
-    async function handleComplete({ status, blob }) {
+    async function handleComplete({ status, blob, savedToDisk, closePromise = null }) {
         disconnect();
+        // Receiver: delay leave() so sender sees checkmark for a few seconds
+        if (pendingRole === 'receiver' && status === 'ok') {
+            setTimeout(() => leave().catch(() => {}), 5000);
+        } else if (pendingRole === 'receiver') {
+            leave().catch(() => {});
+        }
+
+        // Receiver left voluntarily — return to entry screen
+        if (status === 'left') {
+            clearAnchor();
+            handleRestart();
+            return;
+        }
+
         const name = sessionData?.state?.file?.name || 'download';
+
+        // File saved to disk via File System Access API — finalize
+        if (status === 'ok' && savedToDisk) {
+            if (closePromise) {
+                finalizing = true;
+                const beforeUnload = (e) => { e.preventDefault(); };
+                window.addEventListener('beforeunload', beforeUnload);
+                await closePromise;
+                window.removeEventListener('beforeunload', beforeUnload);
+                finalizing = false;
+            }
+            completeStatus = status;
+            completeBlob = null;
+            completeFileName = name;
+            screen = 'complete';
+            return;
+        }
 
         // Only mobile Chromium needs the reload trick for blob downloads
         if (status === 'ok' && blob && needsReloadForBlobDownload()) {
@@ -328,11 +347,6 @@
         screen = 'entry';
     }
 
-    function handleBackToEntry() {
-        pendingFile = null;
-        screen = 'entry';
-    }
-
     // Run init once on mount, not inside $effect to avoid re-runs on state changes
     init();
 
@@ -354,22 +368,10 @@
                 <div class="spinner"></div>
             </div>
         {:else if screen === 'entry'}
-            <EntryScreen name={userName} onstart={handleStart} onjoinlink={handleJoinLink} />
+            <EntryScreen name={userName} onfileselected={handleFileSelected} onjoinlink={handleJoinLink} />
             {#if errorMsg}
                 <p class="error">{errorMsg}</p>
             {/if}
-        {:else if screen === 'file_select'}
-            <div class="file-select-screen">
-                <h2>{tt('selectFile')}</h2>
-                <label class="file-picker">
-                    <input type="file" onchange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleFileSelected(f);
-                    }} />
-                    <span class="file-picker-label">{pendingFile ? pendingFile.name : tt('selectFile')}</span>
-                </label>
-                <button class="back-btn" onclick={handleBackToEntry}>{tt('startOver')}</button>
-            </div>
         {:else if screen === 'captcha'}
             <Captcha
                 captchaData={captchaData}
@@ -401,6 +403,16 @@
                 fileName={completeFileName}
                 onrestart={handleRestart}
             />
+        {/if}
+
+        {#if finalizing}
+            <div class="finalizing-overlay">
+                <div class="finalizing-box">
+                    <div class="spinner"></div>
+                    <div class="finalizing-text">{tt('finalizing')}</div>
+                    <div class="finalizing-warn">{tt('finalizingWarn')}</div>
+                </div>
+            </div>
         {/if}
     </main>
 
@@ -471,55 +483,43 @@
         font-size: 0.9rem;
     }
 
-    .file-select-screen {
+
+    .finalizing-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(26, 26, 46, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .finalizing-box {
         text-align: center;
-        max-width: 400px;
-        width: 100%;
-        padding: 0 1rem;
     }
 
-    .file-select-screen h2 {
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #333;
+        border-top-color: #e94560;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .finalizing-text {
         color: #eee;
-        margin-bottom: 1.5rem;
+        font-size: 1.1rem;
+        margin-bottom: 0.5rem;
     }
 
-    .file-picker {
-        display: block;
-        background: #16213e;
-        border: 2px dashed #0f3460;
-        border-radius: 8px;
-        padding: 2rem;
-        cursor: pointer;
-        transition: border-color 0.2s;
-    }
-
-    .file-picker:hover {
-        border-color: #e94560;
-    }
-
-    .file-picker input {
-        display: none;
-    }
-
-    .file-picker-label {
-        color: #999;
-        font-size: 0.95rem;
-    }
-
-    .back-btn {
-        margin-top: 1rem;
-        padding: 0.5rem 1.5rem;
-        background: transparent;
-        color: #999;
-        border: 1px solid #333;
-        border-radius: 4px;
-        cursor: pointer;
-        font-family: inherit;
+    .finalizing-warn {
+        color: #e94560;
         font-size: 0.85rem;
-    }
-
-    .back-btn:hover {
-        color: #eee;
-        border-color: #666;
     }
 </style>
