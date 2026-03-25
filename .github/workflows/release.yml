@@ -67,6 +67,8 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build .deb package
+        env:
+          APP_VERSION: ${{ github.ref_name }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="$(dpkg --print-architecture)"
@@ -163,6 +165,8 @@ jobs:
           path: src/
 
       - name: Build static binary
+        env:
+          APP_VERSION: ${{ github.ref_name }}
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -212,6 +216,8 @@ jobs:
           path: src/
 
       - name: Build and package RPM
+        env:
+          APP_VERSION: ${{ github.ref_name }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           ARCH="$(uname -m)"
