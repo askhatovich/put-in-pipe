@@ -205,6 +205,13 @@ TEST(SerializableEventTest, SetFileInfoFailureEvent) {
     EXPECT_EQ(json["event"].s(), "set_file_info_failure");
 }
 
+TEST(SerializableEventTest, KickedEvent) {
+    SerializableEvent::Kicked evt;
+    auto json = crow::json::load(evt.json());
+    ASSERT_TRUE(json);
+    EXPECT_EQ(json["event"].s(), "kicked");
+}
+
 TEST(SerializableEventTest, UnknownActionEvent) {
     SerializableEvent::UnknownAction evt{"do_something"};
     auto json = crow::json::load(evt.json());

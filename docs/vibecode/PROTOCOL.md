@@ -10,7 +10,7 @@
 | POST | `/api/identity/confirmation` | No | Captcha answer. Body: `{captcha_answer, client_id, captcha_token, name}` |
 | GET | `/api/me/info` | Cookie | `{id (publicId), name, session}` |
 | POST | `/api/me/leave` | Cookie | Remove client immediately |
-| POST | `/api/session/create` | Cookie | Create session. 201: `{id}` |
+| POST | `/api/session/create` | Cookie | Create session. Optional JSON body: `{auto_drop_freeze: bool}`. 201: `{id}` |
 | GET | `/api/session/join?id=<id>` | Cookie | Join session. 202: `{id}` |
 | POST | `/api/session/chunk` | Cookie | Upload chunk (binary body). 202 or 421 (buffer full) |
 | GET | `/api/session/chunk?id=<idx>` | Cookie | Download chunk. 200 (binary) or 404 |
@@ -64,6 +64,7 @@ Format: `{"action": "name", "data": {...}}`
 | `new_name` | Any | `{name}` | Change name (truncated to 20 chars). NOT echoed to self |
 | `confirm_chunk` | Any | `{index}` | Confirm chunk received. Updates currentChunkIndex |
 | `get_chunk` | Any | `{index}` | Request chunk (returns binary or error event) |
+| `ack` | Any | `{id}` | Acknowledge a server event that carried an `id` field |
 | Binary frame | Sender | raw bytes | Upload chunk |
 
 ### Server → Client Events
@@ -85,15 +86,35 @@ Format: `{"event": "name", "data": {...}}`
 | `personal_received` | `{bytes}` | Receiver's personal byte count |
 | `chunks_unfrozen` | `{}` | Freeze dropped |
 | `upload_finished` | `{}` | Sender EOF |
-| `complete` | `{status}` | Session ended: "ok", "timeout", "sender_is_gone", "no_receivers" |
+| `complete` | `{status}` | Session ended: "ok", "timeout", "sender_is_gone", "no_receivers". **ACK-required** |
+| `kicked` | `{}` | Sent to a receiver that the sender just kicked. **ACK-required** |
 | `new_chunk_allowed` | `{status}` | Sender only: buffer has space (flow control) |
 | Error events | varies | `set_file_info_failure`, `add_chunk_failure`, `requested_chunk_not_found`, `unknown_action` |
+
+## Event Acknowledgment
+
+Terminal events that precede a WS close carry a top-level `id` (uint64) field. The client MUST reply with `{"action": "ack", "data": {"id": <same id>}}`. The server closes the WS only after the ACK arrives, or after a fallback timer (default 2 s). This replaces the previous 1-second arbitrary delay that was used to avoid racing the close frame against the final text frame.
+
+- Events currently marked ACK-required: `complete`, `kicked`.
+- Other events remain fire-and-forget (no `id` field).
+- A client that ignores the ACK requirement will still see the close — it just happens 2 s later via the fallback.
+
+Example:
+
+```json
+// server → client
+{"event": "complete", "id": 17, "data": {"status": "ok"}}
+
+// client → server
+{"action": "ack", "data": {"id": 17}}
+```
 
 ## Important Protocol Behaviors
 
 1. **name_changed NOT echoed to self** — client must update locally
-2. **receiver_removed NOT sent to kicked receiver** — their WS is closed by server
+2. **kicked IS sent to the removed receiver** (ACK-required); the receiver is removed from `m_dataReceivers` before the event is sent, so they do not receive a `receiver_removed` for themselves
 3. **confirm_chunk updates currentChunkIndex** — visible to other participants in start_init and chunk_download events
 4. **One WS per client** — reconnecting drops previous connection
 5. **WS disconnect ≠ client removal** — client stays for `clientTimeout` (60s) allowing reconnect
 6. **POST /api/me/leave = immediate removal** — no timeout wait
+7. **Terminal events are delivery-confirmed** — `complete` and `kicked` wait for ACK before the server tears down the WS

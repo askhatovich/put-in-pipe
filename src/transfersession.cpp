@@ -5,6 +5,7 @@
 #include "transfersession.h"
 #include "transfersessionlist.h"
 #include "clientlist.h"
+#include "serializableevent.h"
 #include "crowlib/crow/utility.h"
 #include "config/config.h"
 
@@ -12,45 +13,25 @@
 
 #include <mutex>
 
-TransferSession::TransferSession(std::shared_ptr<Client> sender, const std::string& sessionId, asio::io_context& ioContext)
+TransferSession::TransferSession(std::shared_ptr<Client> sender, const std::string& sessionId,
+                                 asio::io_context& ioContext, const Options& options)
     : m_id(sessionId)
     , m_dataSender(sender)
     , m_ioContext(ioContext)
+    , m_options(options)
 {
-    PLOG_DEBUG << "Session " << sessionId << " created";
+    PLOG_DEBUG << "Session " << sessionId << " created"
+               << (options.autoDropFreezeOnFirstChunk ? " [auto-drop freeze]" : "");
 }
 
 TransferSession::~TransferSession()
 {
     PLOG_INFO << "Session " << m_id << " destroyed";
 
+    // Each subscribed client's update() handler sends the "complete" event
+    // via sendTextWithAck and, on ACK (or fallback timer), removes itself
+    // from ClientList. No session-wide coordination required.
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::complete, m_completeType);
-
-    // Collect client IDs for delayed removal.
-    // Delay ensures the "complete" event text frame is delivered
-    // before the WS close frame (which is sent by Client destructor).
-    std::vector<std::string> clientIds;
-    for (auto& receiver : m_dataReceivers)
-    {
-        if (auto sp = receiver.lock())
-        {
-            clientIds.push_back(sp->id());
-        }
-    }
-    if (auto sp = m_dataSender.lock())
-    {
-        clientIds.push_back(sp->id());
-    }
-
-    auto timer = std::make_shared<asio::steady_timer>(m_ioContext);
-    timer->expires_after(std::chrono::seconds(1));
-    timer->async_wait([timer, clientIds](const asio::error_code& ec) {
-        if (ec) return;
-        for (const auto& id : clientIds)
-        {
-            ClientList::instanse().remove(id);
-        }
-    });
 }
 
 void TransferSession::initTimers(std::shared_ptr<TransferSession> me)
@@ -183,24 +164,60 @@ void TransferSession::removeReceiver(const std::string &publicId)
         Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
     }
 
-    // Destroy client outside the lock to avoid deadlock
+    // Notify the removed client with an ACK-required "kicked" event;
+    // the client removes itself from ClientList on ACK or fallback timer.
+    // Done outside the receivers mutex to avoid deadlock in the ACK callback.
     if (removedClient)
     {
-        ClientList::instanse().remove(removedClient->id());
+        const std::string removedInternalId = removedClient->id();
+        removedClient->sendTextWithAck(
+            SerializableEvent::Kicked{}.json(),
+            [removedInternalId]() { ClientList::instanse().remove(removedInternalId); }
+        );
         removedClient.reset();
     }
 
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::receiverRemoved, publicId);
 
-    // Terminate if no receivers left and session can't accept new ones:
-    // - chunks were removed (new receiver can't get full file), or
-    // - freeze was already dropped (chunks will be removed on next confirm)
-    if (noReceiversLeft and (m_buffer.someChunksWasRemoved() or not m_buffer.initialChunksFreezing()))
+    // Terminate when no receivers are left. Three cases:
+    //
+    // 1. Auto-drop mode (sender opted into unattended operation) — terminate
+    //    immediately with "ok" regardless of buffer state. The sender asked
+    //    for fire-and-forget; whatever was delivered to the (now departed)
+    //    receivers is considered a successful outcome.
+    //
+    // 2. Full transfer completed (EOF + empty buffer) before the last
+    //    receiver left — terminate with "ok".
+    //
+    // 3. Chunks were removed or freeze already dropped, but the transfer
+    //    wasn't finished — terminate with "no_receivers".
+    //
+    // If freeze is still active and no chunks were removed, keep the session
+    // alive so another receiver can still join (default mode only).
+    if (noReceiversLeft)
     {
-        PLOG_INFO << "Session " << m_id << ": no receivers left, terminating";
-        m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
-        TransferSessionList::instanse().remove(m_id);
-        return;
+        if (m_options.autoDropFreezeOnFirstChunk)
+        {
+            PLOG_INFO << "Session " << m_id << ": no receivers left (auto-drop mode), terminating (ok)";
+            m_completeType = Event::Data::TransferSessionCompleteType::ok;
+            TransferSessionList::instanse().remove(m_id);
+            return;
+        }
+        if (m_buffer.someChunksWasRemoved() or not m_buffer.initialChunksFreezing())
+        {
+            if (m_buffer.eof() and m_buffer.chunkCount() == 0)
+            {
+                PLOG_INFO << "Session " << m_id << ": last receiver left after full transfer, terminating (ok)";
+                m_completeType = Event::Data::TransferSessionCompleteType::ok;
+            }
+            else
+            {
+                PLOG_INFO << "Session " << m_id << ": no receivers left, terminating (no_receivers)";
+                m_completeType = Event::Data::TransferSessionCompleteType::noReceivers;
+            }
+            TransferSessionList::instanse().remove(m_id);
+            return;
+        }
     }
 }
 
@@ -294,6 +311,19 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
         return;
     }
 
+    // Auto-drop the initial freeze as soon as any receiver confirms any
+    // chunk. The atomic flag guarantees we only call dropInitialChunksFreeze
+    // once, even under concurrent confirmations.
+    if (m_options.autoDropFreezeOnFirstChunk and m_buffer.initialChunksFreezing())
+    {
+        bool expected = false;
+        if (m_autoDropFreezeFired.compare_exchange_strong(expected, true))
+        {
+            PLOG_INFO << "Session " << m_id << ": auto-dropping initial freeze on first confirm";
+            dropInitialChunksFreeze();
+        }
+    }
+
     const auto chunk = m_buffer[index];
     if (chunk)
     {
@@ -354,6 +384,15 @@ void TransferSession::setEndOfFile()
     m_buffer.setEndOfFile();
 
     Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::fileUploadFinished, nullptr);
+
+    // If all chunks were already confirmed before EOF arrived, the completion
+    // check in setChunkAsReceived would have missed (eof was false then).
+    // Re-check here so the session terminates deterministically.
+    if (m_buffer.chunkCount() == 0)
+    {
+        PLOG_INFO << "Session " << m_id << ": transfer complete (EOF after all chunks confirmed)";
+        TransferSessionList::instanse().remove(m_id);
+    }
 }
 
 void TransferSession::dropInitialChunksFreeze()

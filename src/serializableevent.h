@@ -90,6 +90,11 @@ struct SessionComplete
     std::string json() const;
 };
 
+struct Kicked
+{
+    std::string json() const;
+};
+
 struct TotalBytesCount
 {
     size_t value = 0;

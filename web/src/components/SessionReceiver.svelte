@@ -283,6 +283,13 @@
         }
     }
 
+    function onKicked() {
+        if (completeHandled) return;
+        completeHandled = true;
+        if (writable) { writable.close().catch(() => {}); writable = null; }
+        oncomplete?.({ status: 'kicked' });
+    }
+
     function onWsClose() {
         if (completeHandled) return;
         setTimeout(() => {
@@ -316,6 +323,7 @@
         on('receiver_removed', onReceiverRemoved);
         on('name_changed', onNameChanged);
         on('complete', onSessionComplete);
+        on('kicked', onKicked);
         on('online', onOnline);
         on('personal_received', onPersonalReceived);
         on('close', onWsClose);
@@ -330,6 +338,7 @@
             off('receiver_removed', onReceiverRemoved);
             off('name_changed', onNameChanged);
             off('complete', onSessionComplete);
+            off('kicked', onKicked);
             off('online', onOnline);
             off('personal_received', onPersonalReceived);
             off('close', onWsClose);

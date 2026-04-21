@@ -30,6 +30,7 @@
             case 'timeout': return tt('transferTimeout');
             case 'sender_is_gone': return tt('senderGone');
             case 'no_receivers': return tt('noReceiversEnd');
+            case 'kicked': return tt('kicked');
             default: return tt('error');
         }
     }

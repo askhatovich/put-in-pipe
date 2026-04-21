@@ -25,7 +25,10 @@ Initial freeze prevents chunk deletion while waiting for receivers.
 
 - **During freeze:** chunks NOT removed after confirmation (sanitize() returns early)
 - **After freeze drops:** confirmed chunks removed, freeing buffer space
-- **Freeze drops by:** sender `drop_freeze` action OR server auto-timer (120s)
+- **Freeze drops by:**
+  - sender `drop_freeze` action, OR
+  - server auto-timer (`max_initial_freeze_duration`, default 120 s), OR
+  - auto-drop on first receiver confirmation when the session was created with `auto_drop_freeze: true`
 - **After freeze + chunks removed:** new receivers CANNOT join (would miss data)
 
 ```
@@ -36,7 +39,11 @@ Freeze drops:    [confirmed chunks deleted] [new chunks flow through]
 ## Completion Paths
 
 ### 1. Normal (ok)
-All chunks confirmed by all receivers + EOF set → `chunkCount == 0 && eof()` → session removed.
+All chunks confirmed by all receivers + EOF set → session removed. Triggered from either:
+- `setChunkAsReceived()` after the last confirmation if EOF is already set;
+- `setEndOfFile()` if all chunks were already confirmed before EOF arrived (handles the race where the receiver finishes download before `upload_finished` reaches the server);
+- `removeReceiver()` if the last receiver leaves after the full file was already transferred — this is reclassified from `no_receivers` to `ok`.
+- `removeReceiver()` in auto-drop mode (`auto_drop_freeze: true`) — any time the last receiver leaves, even mid-transfer.
 
 ### 2. Manual Terminate (sender_is_gone)
 Sender sends `terminate_session` → immediate removal.
@@ -45,11 +52,13 @@ Sender sends `terminate_session` → immediate removal.
 Sender WS closes → 60s timeout → client destroyed → if `!eof()`: terminate with sender_is_gone. If `eof()` and no receivers: terminate with no_receivers.
 
 ### 4. No Receivers (no_receivers)
-All receivers removed AND (`someChunksWasRemoved` OR `!initialChunksFreezing`) → terminate.
+All receivers removed AND (`someChunksWasRemoved` OR `!initialChunksFreezing`) AND transfer wasn't fully delivered → terminate.
 
 Triggered in:
 - `removeReceiver()` — when last receiver leaves after freeze dropped
 - `dropInitialChunksFreeze()` — when freeze drops with no receivers
+
+**Exception (auto-drop mode):** when the session was created with `auto_drop_freeze: true`, the last receiver leaving always terminates the session with `ok` — regardless of whether the transfer finished, whether any chunk was removed, or whether the freeze was dropped. The sender explicitly opted into fire-and-forget: whatever was delivered to the (now departed) receivers is treated as a successful outcome.
 
 ### 5. Timeout (timeout)
 Session lifetime exceeds `max_lifetime` (default 2h) → `setTimedout()` → remove.
@@ -58,14 +67,17 @@ Session lifetime exceeds `max_lifetime` (default 2h) → `setTimedout()` → rem
 
 ```
 TransferSession::~TransferSession()
-  1. Broadcast "complete" event to all subscribers
-  2. Collect sender + receiver client IDs
-  3. Schedule 1-second ASIO timer
-  4. Timer fires → ClientList::remove(id) for each
+  1. Publisher::notifySubscribers(complete, completeType)
+     → each Client::update() calls sendTextWithAck("complete", onAckCallback)
+     → server injects "id":N, sends JSON, arms fallback timer (2 s)
+  2. Browser receives event, auto-ACKs via {"action":"ack","data":{"id":N}}
+  3. Server matches ACK → fires onAckCallback → ClientList::remove(id)
      → Client::~Client() → WS close
+  4. If ACK never arrives within 2 s, the fallback timer fires
+     the same onAckCallback (fail-open).
 ```
 
-1-second delay ensures "complete" text frame arrives before WS close frame.
+There is no fixed delay — each client closes as soon as it has confirmed the `complete` event. The fallback exists only for dead clients.
 
 ## removeReceiver() Flow (Critical)
 

@@ -58,9 +58,17 @@ export async function confirmIdentity(payload) {
     }
 }
 
-export async function createSession() {
+export async function createSession(options = {}) {
     try {
-        const res = await fetch('/api/session/create', { method: 'POST' });
+        const body = {};
+        if (typeof options.autoDropFreeze === 'boolean') {
+            body.auto_drop_freeze = options.autoDropFreeze;
+        }
+        const res = await fetch('/api/session/create', {
+            method: 'POST',
+            headers: Object.keys(body).length ? { 'Content-Type': 'application/json' } : {},
+            body: Object.keys(body).length ? JSON.stringify(body) : undefined,
+        });
         return await parseResponse(res);
     } catch (err) {
         return { status: 0, data: null, error: err.message };

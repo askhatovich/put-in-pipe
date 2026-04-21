@@ -387,7 +387,34 @@ void WebAPI::sessionCreate(const crow::request &req, crow::response &res)
         return;
     }
 
-    const auto newSession = TransferSessionList::instanse().create(client);
+    // Optional JSON body with session options. Invalid JSON → 400.
+    // Empty body is allowed (defaults used).
+    TransferSession::Options options;
+    if (not req.body.empty())
+    {
+        const auto json = crow::json::load(req.body);
+        if (!json)
+        {
+            res.code = 400;
+            res.body = "Invalid JSON body";
+            res.end();
+            return;
+        }
+        if (json.has("auto_drop_freeze"))
+        {
+            if (json["auto_drop_freeze"].t() != crow::json::type::True
+                and json["auto_drop_freeze"].t() != crow::json::type::False)
+            {
+                res.code = 400;
+                res.body = ".auto_drop_freeze must be a boolean";
+                res.end();
+                return;
+            }
+            options.autoDropFreezeOnFirstChunk = json["auto_drop_freeze"].b();
+        }
+    }
+
+    const auto newSession = TransferSessionList::instanse().create(client, options);
     if (newSession.first == nullptr)
     {
         PLOG_ERROR << "Session creation failed for client " << client->publicId();
@@ -1052,6 +1079,18 @@ void WebAPI::internalWsMessageProcessing(crow::websocket::connection &conn,
         const size_t chunkId = data["index"].u();
         client->setCurrentChunkIndex(chunkId);
         session->setChunkAsReceived(chunkId, client);
+    }
+    else if (action == "ack")
+    {
+        /*
+         * Client confirms receipt of a server→client event that carried
+         * an "id" field. Used for terminal events (complete, kicked) so
+         * the server can close the WS only after delivery confirmation.
+         */
+        if (data.has("id"))
+        {
+            client->processAck(data["id"].u());
+        }
     }
     else
     {

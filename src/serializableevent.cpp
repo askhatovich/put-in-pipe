@@ -144,6 +144,16 @@ std::string SerializableEvent::SessionComplete::json() const
     return root.dump();
 }
 
+std::string SerializableEvent::Kicked::json() const
+{
+    crow::json::wvalue root = {
+        {"event", "kicked"},
+        {"data", crow::json::wvalue::empty_object()}
+    };
+
+    return root.dump();
+}
+
 std::string SerializableEvent::TotalBytesCount::json() const
 {
     crow::json::wvalue root = {

@@ -39,6 +39,9 @@ const translations = {
         finalizing: "Finalizing file. Please wait...",
         finalizingWarn: "Do not close this tab",
         minutes: "min",
+        kicked: "You were removed from the session",
+        autoDropFreeze: "Start transfer automatically when a receiver connects",
+        autoDropFreezeHint: "Drops the initial wait as soon as the first chunk is picked up",
     },
     ru: {
         sendFile: "Отправить файл",
@@ -80,6 +83,9 @@ const translations = {
         finalizing: "Финализация файла. Подождите...",
         finalizingWarn: "Не закрывайте вкладку",
         minutes: "мин",
+        kicked: "Вы были удалены из сессии",
+        autoDropFreeze: "Начать передачу автоматически, когда подключится получатель",
+        autoDropFreezeHint: "Снимает стартовое ожидание, как только первый чанк будет получен",
     },
 };
 
@@ -131,6 +137,16 @@ export function getOrGenerateName() {
     const generated = randomName(detectLang());
     saveName(generated);
     return generated;
+}
+
+const AUTO_DROP_FREEZE_KEY = 'pip_auto_drop_freeze';
+
+export function getAutoDropFreeze() {
+    try { return localStorage.getItem(AUTO_DROP_FREEZE_KEY) === '1'; } catch { return false; }
+}
+
+export function setAutoDropFreeze(enabled) {
+    try { localStorage.setItem(AUTO_DROP_FREEZE_KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
 }
 
 function detectLang() {

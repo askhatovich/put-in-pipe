@@ -27,7 +27,8 @@ TransferSessionList &TransferSessionList::instanse()
     return list;
 }
 
-TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_ptr<Client> creator)
+TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_ptr<Client> creator,
+                                                                   const TransferSession::Options& options)
 {
     if (creator == nullptr) return {nullptr, 0};
 
@@ -44,7 +45,7 @@ TransferSessionList::SessionAndTimeout TransferSessionList::create(std::shared_p
         return {nullptr, 0};
     }
 
-    auto session = createSubscriber<TransferSession>(creator, id, m_ioContext);
+    auto session = createSubscriber<TransferSession>(creator, id, m_ioContext, options);
     session->initTimers(session);
 
     session->Publisher<Event::TransferSession>::addSubscriber(creator);

@@ -73,6 +73,16 @@ protected:
         return result;
     }
 
+    // Helper: create a session with options and track it for cleanup
+    TransferSessionList::SessionAndTimeout createSessionWithOptions(
+            std::shared_ptr<Client> sender, const TransferSession::Options& options) {
+        auto result = TransferSessionList::instanse().create(sender, options);
+        if (result.first) {
+            createdSessionIds_.push_back(result.first->id());
+        }
+        return result;
+    }
+
     std::vector<std::string> createdClientTokens_;
     std::vector<std::string> createdSessionIds_;
 };
@@ -348,6 +358,163 @@ TEST_F(TransferIntegrationTest, RejectReceiverAfterChunkRemoved) {
     auto lateReceiver = createClient("receiver_reject_late_1");
     ASSERT_NE(lateReceiver, nullptr);
     EXPECT_FALSE(session->addReceiver(lateReceiver));
+}
+
+// ---------------------------------------------------------------------------
+// AutoDropFreezeOnFirstConfirm
+// With autoDropFreezeOnFirstChunk = true, the initial freeze is dropped
+// as soon as the first receiver confirms a chunk — no manual drop_freeze
+// call needed.
+// ---------------------------------------------------------------------------
+TEST_F(TransferIntegrationTest, AutoDropFreezeOnFirstConfirm) {
+    auto sender = createClient("sender_autodrop_1");
+    ASSERT_NE(sender, nullptr);
+
+    TransferSession::Options opts;
+    opts.autoDropFreezeOnFirstChunk = true;
+
+    auto [session, _timeout] = createSessionWithOptions(sender, opts);
+    ASSERT_NE(session, nullptr);
+
+    EXPECT_TRUE(sender->joinSession(session->id()));
+
+    auto receiver = createClient("receiver_autodrop_1");
+    ASSERT_NE(receiver, nullptr);
+    EXPECT_TRUE(receiver->joinSession(session->id()));
+    EXPECT_TRUE(session->addReceiver(receiver));
+    EXPECT_TRUE(session->setFileInfo({"auto.bin", 1000}));
+
+    // Freeze is active by default; no manual drop here.
+    EXPECT_TRUE(session->initialChunksFreeze());
+
+    // Upload and download a chunk; do NOT manually drop the freeze.
+    std::string chunkData(128, '\xAA');
+    EXPECT_TRUE(session->addChunk(chunkData));
+    ASSERT_NE(session->getChunk(1, receiver), nullptr);
+
+    // Confirm chunk → auto-drop should fire.
+    session->setChunkAsReceived(1, receiver);
+    EXPECT_FALSE(session->initialChunksFreeze());
+    EXPECT_TRUE(session->someChunkWasRemoved());
+}
+
+// ---------------------------------------------------------------------------
+// AutoDropFreezeDisabledByDefault
+// Without the option, the initial freeze survives chunk confirmations
+// (existing behavior — InitialFreezePreservesChunks covers positive path,
+// this one verifies the default is unchanged).
+// ---------------------------------------------------------------------------
+TEST_F(TransferIntegrationTest, AutoDropFreezeDisabledByDefault) {
+    auto sender = createClient("sender_autodrop_off");
+    ASSERT_NE(sender, nullptr);
+
+    auto [session, _timeout] = createSession(sender);  // no options → defaults
+    ASSERT_NE(session, nullptr);
+
+    EXPECT_TRUE(sender->joinSession(session->id()));
+
+    auto receiver = createClient("receiver_autodrop_off");
+    ASSERT_NE(receiver, nullptr);
+    EXPECT_TRUE(receiver->joinSession(session->id()));
+    EXPECT_TRUE(session->addReceiver(receiver));
+    EXPECT_TRUE(session->setFileInfo({"auto_off.bin", 1000}));
+
+    EXPECT_TRUE(session->initialChunksFreeze());
+
+    std::string chunkData(128, '\xBB');
+    EXPECT_TRUE(session->addChunk(chunkData));
+    ASSERT_NE(session->getChunk(1, receiver), nullptr);
+    session->setChunkAsReceived(1, receiver);
+
+    // Freeze remains active — chunk preserved.
+    EXPECT_TRUE(session->initialChunksFreeze());
+    EXPECT_FALSE(session->someChunkWasRemoved());
+}
+
+// ---------------------------------------------------------------------------
+// AutoDropFreezeTerminatesOkOnLastReceiverLeave
+// In auto-drop mode, the session ends with "ok" as soon as the last
+// receiver disconnects — regardless of buffer state and regardless of
+// whether any chunk was ever removed. This is the "fire-and-forget"
+// contract: the sender opted out of babysitting the transfer.
+// ---------------------------------------------------------------------------
+TEST_F(TransferIntegrationTest, AutoDropFreezeTerminatesOkOnLastReceiverLeave) {
+    auto sender = createClient("sender_autodrop_leave");
+    ASSERT_NE(sender, nullptr);
+
+    TransferSession::Options opts;
+    opts.autoDropFreezeOnFirstChunk = true;
+
+    auto [session, _t] = createSessionWithOptions(sender, opts);
+    ASSERT_NE(session, nullptr);
+    EXPECT_TRUE(sender->joinSession(session->id()));
+
+    auto receiver = createClient("receiver_autodrop_leave");
+    ASSERT_NE(receiver, nullptr);
+    EXPECT_TRUE(receiver->joinSession(session->id()));
+    EXPECT_TRUE(session->addReceiver(receiver));
+    EXPECT_TRUE(session->setFileInfo({"auto_leave.bin", 5000}));
+
+    // Upload several chunks but don't finish. Receiver confirms one,
+    // auto-drop fires, then receiver leaves mid-transfer.
+    std::string chunkData(200, '\xCC');
+    EXPECT_TRUE(session->addChunk(chunkData));
+    EXPECT_TRUE(session->addChunk(chunkData));
+    ASSERT_NE(session->getChunk(1, receiver), nullptr);
+    session->setChunkAsReceived(1, receiver);
+    EXPECT_FALSE(session->initialChunksFreeze());
+
+    const std::string sessionId = session->id();
+    const std::string receiverPublicId = receiver->publicId();
+    session->removeReceiver(receiverPublicId);
+
+    // Session must be gone and must have terminated successfully.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    auto [found, _remaining] = TransferSessionList::instanse().get(sessionId);
+    EXPECT_EQ(found, nullptr);
+
+    createdSessionIds_.clear();
+    createdClientTokens_.clear();
+}
+
+// ---------------------------------------------------------------------------
+// AutoDropFreezeTerminatesOkEvenWithoutRemovedChunks
+// Receiver joins and leaves before auto-drop would fire (no chunks
+// confirmed yet). In auto-drop mode, the session still terminates
+// immediately — without this option it would linger while the freeze
+// held chunks in memory.
+// ---------------------------------------------------------------------------
+TEST_F(TransferIntegrationTest, AutoDropFreezeTerminatesOkEvenWithoutRemovedChunks) {
+    auto sender = createClient("sender_autodrop_nochunk");
+    ASSERT_NE(sender, nullptr);
+
+    TransferSession::Options opts;
+    opts.autoDropFreezeOnFirstChunk = true;
+
+    auto [session, _t] = createSessionWithOptions(sender, opts);
+    ASSERT_NE(session, nullptr);
+    EXPECT_TRUE(sender->joinSession(session->id()));
+
+    auto receiver = createClient("receiver_autodrop_nochunk");
+    ASSERT_NE(receiver, nullptr);
+    EXPECT_TRUE(receiver->joinSession(session->id()));
+    EXPECT_TRUE(session->addReceiver(receiver));
+    EXPECT_TRUE(session->setFileInfo({"auto_nochunk.bin", 5000}));
+
+    // No chunks uploaded, no confirmations — auto-drop hasn't fired.
+    EXPECT_TRUE(session->initialChunksFreeze());
+    EXPECT_FALSE(session->someChunkWasRemoved());
+
+    const std::string sessionId = session->id();
+    session->removeReceiver(receiver->publicId());
+
+    // In auto-drop mode the session terminates regardless of buffer state.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    auto [found, _remaining] = TransferSessionList::instanse().get(sessionId);
+    EXPECT_EQ(found, nullptr);
+
+    createdSessionIds_.clear();
+    createdClientTokens_.clear();
 }
 
 // ---------------------------------------------------------------------------

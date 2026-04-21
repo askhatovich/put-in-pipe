@@ -5,6 +5,7 @@
 #pragma once
 
 #include "timercallback.h"
+#include "transfersession.h"
 
 #include <string>
 #include <shared_mutex>
@@ -12,7 +13,6 @@
 #include <memory>
 #include <thread>
 
-class TransferSession;
 class Client;
 
 class TransferSessionList
@@ -24,7 +24,8 @@ public:
 
     using SessionAndTimeout = std::pair<std::shared_ptr<TransferSession>, size_t/*remaining*/>;
 
-    SessionAndTimeout create(std::shared_ptr<Client> creator);
+    SessionAndTimeout create(std::shared_ptr<Client> creator,
+                             const TransferSession::Options& options = {});
     SessionAndTimeout get(const std::string& id);
     size_t count() const;
     bool possibleToCreateNew();

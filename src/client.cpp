@@ -3,6 +3,7 @@
 // For full license text, see <https://www.gnu.org/licenses/gpl-3.0.txt>
 
 #include "client.h"
+#include "clientlist.h"
 #include "captcha/skaptcha_tools.h"
 #include "serializableevent.h"
 #include "transfersession.h"
@@ -14,10 +15,89 @@
 Client::Client(const std::string &id, asio::io_context& ioContext, std::function<void()> onTimeout) :
     m_id(id),
     m_publicId(skaptcha_tools::crypto::HashSignature::instance().sign(m_id)),
-    m_wsTimeoutTimer(ioContext, onTimeout, TimerCallback::Duration(Config::instance().clientTimeout()))
+    m_wsTimeoutTimer(ioContext, onTimeout, TimerCallback::Duration(Config::instance().clientTimeout())),
+    m_ioContext(ioContext)
 {
     PLOG_DEBUG << "Client " << m_id << " created";
     m_wsTimeoutTimer.start();
+}
+
+void Client::sendTextWithAck(const std::string& eventJson,
+                             std::function<void()> onAck,
+                             std::chrono::milliseconds fallback)
+{
+    const uint64_t id = m_nextAckId.fetch_add(1);
+
+    // Inject "id":<n> right after the opening brace. All event JSON
+    // produced by SerializableEvent begins with '{', so this is safe.
+    std::string withId;
+    withId.reserve(eventJson.size() + 32);
+    withId.push_back('{');
+    withId.append("\"id\":");
+    withId.append(std::to_string(id));
+    if (eventJson.size() > 2)
+    {
+        withId.push_back(',');
+        withId.append(eventJson, 1, std::string::npos);
+    }
+    else
+    {
+        withId.append(eventJson, 1, std::string::npos);
+    }
+
+    auto timer = std::make_unique<asio::steady_timer>(m_ioContext);
+    timer->expires_after(fallback);
+
+    // Timer handler looks the client up via ClientList (which owns the
+    // shared_ptr). This avoids enable_shared_from_this, which is
+    // ambiguous under Client's multiple Subscriber<T> inheritance.
+    const std::string myInternalId = m_id;
+
+    {
+        std::lock_guard lock(m_pendingAcksMutex);
+        m_pendingAcks.emplace(id, PendingAck{std::move(onAck), std::move(timer)});
+        auto it = m_pendingAcks.find(id);
+        it->second.fallback->async_wait([myInternalId, id](const asio::error_code& ec) {
+            if (ec) return; // cancelled — ACK arrived first or client destroyed
+            auto client = ClientList::instanse().get(myInternalId);
+            if (!client) return; // client already removed
+            client->resolveAck(id);
+        });
+    }
+
+    if (auto sp = m_webSocketConnection.lock())
+    {
+        sp->sendText(withId);
+    }
+    else
+    {
+        // No WS — fire the callback immediately via the fallback path.
+        resolveAck(id);
+    }
+}
+
+void Client::processAck(uint64_t ackId)
+{
+    resolveAck(ackId);
+}
+
+void Client::resolveAck(uint64_t id)
+{
+    std::function<void()> cb;
+    {
+        std::lock_guard lock(m_pendingAcksMutex);
+        auto it = m_pendingAcks.find(id);
+        if (it == m_pendingAcks.end()) return;
+        cb = std::move(it->second.callback);
+        // Cancel timer if still pending; ignore errors (it may have fired already).
+        if (it->second.fallback)
+        {
+            asio::error_code ignore;
+            it->second.fallback->cancel(ignore);
+        }
+        m_pendingAcks.erase(it);
+    }
+    if (cb) cb();
 }
 
 void Client::onWebSocketDisconnected()
@@ -239,10 +319,11 @@ void Client::update(Event::TransferSession event, std::any data)
     {
          try {
             const auto type = std::any_cast<Event::Data::TransferSessionCompleteType>(data);
-            if (auto sp = m_webSocketConnection.lock())
-            {
-                sp->sendText( SerializableEvent::SessionComplete{type}.json() );
-            }
+            const std::string myInternalId = m_id;
+            sendTextWithAck(
+                SerializableEvent::SessionComplete{type}.json(),
+                [myInternalId]() { ClientList::instanse().remove(myInternalId); }
+            );
         } catch (const std::bad_any_cast& e) {
             PLOG_ERROR << "Client::update - Event::TransferSession::complete "
                          "- expected TransferSessionCompleteType: " << e.what();
@@ -316,6 +397,24 @@ void Client::update(Event::TransferSessionForSender event, std::any data)
 Client::~Client()
 {
     PLOG_DEBUG << "Client " << m_publicId << " destroyed";
+
+    // Fire any remaining ACK callbacks so callers relying on them
+    // (e.g. session cleanup) do not stall. Cancel their timers first.
+    std::unordered_map<uint64_t, PendingAck> pending;
+    {
+        std::lock_guard lock(m_pendingAcksMutex);
+        pending.swap(m_pendingAcks);
+    }
+    for (auto& [_id, entry] : pending)
+    {
+        if (entry.fallback)
+        {
+            asio::error_code ignore;
+            entry.fallback->cancel(ignore);
+        }
+        if (entry.callback) entry.callback();
+    }
+
     Publisher<Event::ClientInternal>::notifySubscribers(Event::ClientInternal::destroyed, m_publicId);
 
     if (auto sp = m_webSocketConnection.lock())

@@ -1,5 +1,5 @@
 <script>
-    import { t, subscribe as i18nSubscribe, getOrGenerateName, saveName } from '$lib/i18n.js';
+    import { t, subscribe as i18nSubscribe, getOrGenerateName, saveName, getAutoDropFreeze } from '$lib/i18n.js';
     import { initCrypto, generateKey, base64urlToKey } from '$lib/crypto.js';
     import { getStatistics, getMyInfo, leave, requestIdentity, createSession, joinSession } from '$lib/api.js';
     import { connect, disconnect, on, off, sendAction as wsSendAction, isConnected } from '$lib/ws.js';
@@ -222,7 +222,7 @@
     }
 
     async function startSender() {
-        const res = await createSession();
+        const res = await createSession({ autoDropFreeze: getAutoDropFreeze() });
         if (res.status !== 201) {
             errorMsg = res.data || res.error || t('error');
             screen = 'entry';
@@ -283,11 +283,14 @@
     }
 
     async function handleComplete({ status, blob, savedToDisk, closePromise = null }) {
+        // If completion was triggered by a server "complete" event, the
+        // session is already gone on the server side — WS is closing by
+        // ACK/fallback, and leave() would just hit a removed client.
+        // We still call leave() for client-detected completion paths
+        // (e.g. local chunksAcknowledged match) so the server can finalize
+        // immediately instead of waiting on the 60s WS timeout.
         disconnect();
-        // Receiver: delay leave() so sender sees checkmark for a few seconds
-        if (pendingRole === 'receiver' && status === 'ok') {
-            setTimeout(() => leave().catch(() => {}), 5000);
-        } else if (pendingRole === 'receiver') {
+        if (pendingRole === 'receiver' && status !== 'left' && status !== 'kicked') {
             leave().catch(() => {});
         }
 

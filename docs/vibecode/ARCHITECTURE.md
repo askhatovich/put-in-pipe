@@ -33,6 +33,7 @@ src/
 - `weak_ptr<WebSocketConnection>` — WS may disconnect and reconnect
 - `m_wsTimeoutTimer` — fires after `clientTimeout` (60s), removes client
 - `m_currentChunkIndex` — updated on each `confirm_chunk`
+- `m_pendingAcks` — map of outstanding ACK-required events (id → callback + fallback timer)
 - Observer pattern: subscribes to session events, publishes online/offline/name changes
 
 ### ClientList (Singleton)
@@ -45,6 +46,8 @@ src/
 - Owns `Buffer` for chunk storage
 - `m_receiversMutex` protects receiver list
 - `m_initialFreezeTimer` — auto-drops freeze after config timeout
+- `Options` — per-session flags set at creation time (e.g. `autoDropFreezeOnFirstChunk`)
+- `m_autoDropFreezeFired` — atomic guard so the auto-drop runs only once
 - Completion type: ok, timeout, senderIsGone, noReceivers
 
 ### TransferSessionList (Singleton)
@@ -89,11 +92,23 @@ Client subscribes to: ClientsDirect (other clients), TransferSession, TransferSe
 TransferSessionList::remove(id)
   → shared_ptr goes out of scope
   → TransferSession::~TransferSession()
-    1. notifySubscribers(complete, status)  — sends "complete" event to all
-    2. Collect all client IDs
-    3. Schedule 1-second ASIO timer
-    4. Timer fires → ClientList::remove(id) for each
+    1. notifySubscribers(complete, status)
+       → each Client::update() sends "complete" via sendTextWithAck
+         (JSON gets "id":N, fallback timer armed for 2 s)
+    2. Client → Server: {"action":"ack","data":{"id":N}}
+    3. Server Client::processAck(N) → callback → ClientList::remove(id)
        → Client::~Client() → WebSocketConnection::close()
 ```
 
-The 1-second delay ensures the "complete" text frame is delivered before the WS close frame.
+Each client closes independently, as soon as its own `complete` event is acknowledged. The fallback timer (2 s) protects against a dead client and is not the primary mechanism.
+
+## ACK Protocol
+
+A lightweight delivery-confirmation layer on top of WebSocket text frames. Server events that require confirmation carry a top-level `id` (uint64). Client replies with `{"action":"ack","data":{"id":N}}`.
+
+- Registration: `Client::sendTextWithAck(json, onAck, fallback=2s)` injects `"id":N`, stores `{onAck, fallback_timer}` in `m_pendingAcks`, sends over WS.
+- Resolution: `Client::processAck(N)` on ACK, or the fallback timer on timeout — both call the same `resolveAck(N)` which runs `onAck` exactly once.
+- Cleanup: `Client::~Client()` drains `m_pendingAcks`, cancels timers, and fires any remaining callbacks so callers don't stall.
+- Liveness: the fallback timer's completion handler re-acquires the client via `ClientList::get(id)` rather than via `shared_from_this` (Client's multiple-base `enable_shared_from_this` is ambiguous).
+
+ACK-required events today: `complete`, `kicked`. All other events remain fire-and-forget.

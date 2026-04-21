@@ -4,7 +4,7 @@
 
 **Problem:** Session destructor sends `complete` via sendText() then destroys clients (which close WS). Close frame may arrive before text frame.
 
-**Solution:** 1-second ASIO timer delay between sending `complete` and removing clients from ClientList. Clients stay alive long enough for text frame delivery.
+**Solution:** Explicit ACK. `complete` (and `kicked`) carry an `id` field; the browser ACKs automatically in `ws.js`. Server closes the WS only after ACK (or a 2-second fallback for dead clients). No arbitrary delay.
 
 ## 2. Expired weak_ptr in Receiver List
 
@@ -26,9 +26,11 @@
 
 ## 5. Receiver Completes But Server Doesn't Know
 
-**Problem:** Web receiver calls `disconnect()` after completing download. Server keeps client for 60s timeout. Sender waits.
+**Problem:** Web receiver calls `disconnect()` after completing download. Server keeps client for 60 s timeout. Sender waits.
 
-**Solution:** `handleComplete()` in App.svelte calls `leave()` (fire-and-forget) after `disconnect()` for receivers. Server immediately removes client → session terminates.
+**Solution (client):** `handleComplete()` in App.svelte calls `leave()` (fire-and-forget) after `disconnect()` for receivers. Server immediately removes client.
+
+**Solution (server):** `setEndOfFile()` re-checks the completion condition (`chunkCount == 0 && eof`) so the session terminates as soon as the last piece of evidence arrives — whether that is the last `confirm_chunk` or `upload_finished`. Additionally, `removeReceiver()` reclassifies a "last receiver left" outcome as `ok` (rather than `no_receivers`) if the full file had already been delivered.
 
 ## 6. name_changed Not Echoed to Self
 

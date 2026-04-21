@@ -192,13 +192,23 @@ This section describes the creation of such a session and the mechanism of joini
 ```
 POST /api/session/create
 
-(empty body)
+(optional JSON body)
+{
+  "auto_drop_freeze": true
+}
 ```
+
+The body is optional. If supplied, it must be valid JSON. Supported fields:
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `auto_drop_freeze` | bool | `false` | Drop the initial chunk freeze automatically as soon as the first receiver confirms a chunk. Saves the sender from having to press "start transfer" manually. **Also changes session termination:** when the last receiver leaves, the session ends with `complete.status = "ok"` regardless of buffer state (fire-and-forget semantics). |
 
 Possible answers:
 
 | Code | Body | Means |
 |---|---|---|
+| 400 | *Error text* | The body was supplied but not valid JSON, or a field has the wrong type. |
 | 401 | You have not been identified | The cookie was not found, or it contains an invalid identifier. You need to start the process of obtaining the ID. |
 | 403 | You are already a participant in the session | The user is already a participant in *some* session |
 | 503 | The maximum number of sessions has been reached, please try again later | The service has reached the maximum number of sessions specified in the configuration file. You can repeat the request after a few seconds, which can be interpreted as adding a new session to the queue. **The timer for automatically deleting a user due to an unconnected websocket is reset with each such request.** |
@@ -353,6 +363,21 @@ If `.state.file` has an empty name and zero size, this is a sure sign that the f
 ---
 
 All websocket text messages contain JSON. Server messages must be processed using the `event` field, and all incoming messages from the client must contain the `action` key. The payload must always be contained in the `data` object. If the message grossly violates the expected format, i.e. violates the protocol described here, the connection is closed with a text description of the problem and code 1003 (Unsupported Data).
+
+### Event acknowledgment
+
+Server events that the server must confirm as delivered before closing the WebSocket carry a top-level `id` field (unsigned 64-bit integer). On receipt the client MUST reply:
+
+```
+{
+  "action": "ack",
+  "data": { "id": <same id> }
+}
+```
+
+If no ACK is received within the server-side fallback window (2 seconds by default), the server proceeds as if it had been confirmed. The fallback is a safety net for dead clients — under normal operation ACKs resolve in one network round-trip.
+
+ACK-required events: `complete`, `kicked`. All other events remain fire-and-forget and do not carry an `id`.
 
 ---
 
@@ -517,18 +542,31 @@ After this event, new chunks cannot be created.
 ```
 {
   "event": "complete",
+  "id": 17,
   "data": {
     "status": "Read below"
   }
 }
 ```
 
-Possible statuses:
+ACK-required (see *Event acknowledgment* above). Possible statuses:
 - `ok` - Normal completion;
 - `timeout` - The session was deleted due to timeout;
 - `sender_is_gone` - The sender left the line;
 - `no_receivers` - The receivers are gone (or never connected);
 - `error` - Another error.
+
+#### E2.11a The receiver was kicked
+
+Sent to the specific receiver that the session creator removed via `kick_receiver`. ACK-required — the server closes the kicked receiver's WS only after the ACK (or the fallback timer). The receiver does not see a `receiver_removed` event for itself; `kicked` replaces it.
+
+```
+{
+  "event": "kicked",
+  "id": 18,
+  "data": {}
+}
+```
 
 #### E2.12 The option to upload a new chunk is available
 
@@ -686,6 +724,19 @@ A chunk is considered received only after explicit confirmation. When a chunk is
   "action": "confirm_chunk",
   "data": {
     "index": 81
+  }
+}
+```
+
+#### A2.4 Acknowledge an ACK-required event
+
+Sent in response to any server event that carried an `id` field. See *Event acknowledgment* above.
+
+```
+{
+  "action": "ack",
+  "data": {
+    "id": 17
   }
 }
 ```

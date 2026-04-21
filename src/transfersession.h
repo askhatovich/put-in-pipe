@@ -68,6 +68,16 @@ public:
         size_t size = 0;
     };
 
+    struct Options
+    {
+        // If true, the initial freeze is dropped automatically as soon as
+        // the first chunk is confirmed received by any receiver. Avoids
+        // requiring the sender to manually press "start transfer" and fixes
+        // the common case where a receiver is ready but the sender is not
+        // watching the UI.
+        bool autoDropFreezeOnFirstChunk = false;
+    };
+
     void initTimers(std::shared_ptr<TransferSession> me);
 
     std::string id() const { return m_id; }
@@ -102,7 +112,8 @@ public:
 
 protected:
     // we explicit use shared_ptr only (Subscriber)
-    TransferSession(std::shared_ptr<Client> sender, const std::string& sessionId, asio::io_context& ioContext);
+    TransferSession(std::shared_ptr<Client> sender, const std::string& sessionId,
+                    asio::io_context& ioContext, const Options& options);
 
 private:
     std::string m_id;
@@ -114,6 +125,8 @@ private:
     mutable std::shared_mutex m_receiversMutex;
     std::unique_ptr<TimerCallback> m_initialFreezeTimer = nullptr;
     asio::io_context& m_ioContext;
+    Options m_options;
+    std::atomic<bool> m_autoDropFreezeFired {false};
 
     Event::Data::TransferSessionCompleteType m_completeType = Event::Data::TransferSessionCompleteType::ok;
 };

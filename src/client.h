@@ -7,6 +7,8 @@
 #include <string>
 #include <shared_mutex>
 #include <functional>
+#include <unordered_map>
+#include <atomic>
 #include <asio.hpp>
 
 #include "observerpattern.h"
@@ -76,6 +78,19 @@ public:
     void onWebSocketConnected(std::shared_ptr<WebSocketConnection> connection);
     void onWebSocketDisconnected();
 
+    /*
+     * Sends a server→client event and waits for the client to ACK it
+     * via {"action":"ack","data":{"id":<n>}}. On ACK or fallback timer
+     * fire, the callback runs exactly once. Intended for terminal events
+     * (complete, kicked) where the server must know delivery occurred
+     * before closing the WS.
+     */
+    static constexpr std::chrono::milliseconds DEFAULT_ACK_FALLBACK {2000};
+    void sendTextWithAck(const std::string& eventJson,
+                         std::function<void()> onAck,
+                         std::chrono::milliseconds fallback = DEFAULT_ACK_FALLBACK);
+    void processAck(uint64_t ackId);
+
     std::string joinedSession() const;
     bool joinSession(const std::string& id);
     void resetWsTimeoutTimerIfItActive();
@@ -99,4 +114,17 @@ private:
     std::atomic<size_t> m_bytesReceived = 0;
     mutable std::shared_mutex m_mutex;
     TimerCallback m_wsTimeoutTimer;
+
+    asio::io_context& m_ioContext;
+
+    struct PendingAck
+    {
+        std::function<void()> callback;
+        std::unique_ptr<asio::steady_timer> fallback;
+    };
+    std::atomic<uint64_t> m_nextAckId {1};
+    std::unordered_map<uint64_t, PendingAck> m_pendingAcks;
+    std::mutex m_pendingAcksMutex;
+
+    void resolveAck(uint64_t id);
 };

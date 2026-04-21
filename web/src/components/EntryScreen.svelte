@@ -1,7 +1,13 @@
 <script>
-    import { t, subscribe } from '$lib/i18n.js';
+    import { t, subscribe, getAutoDropFreeze, setAutoDropFreeze } from '$lib/i18n.js';
 
     let { name: initialName = '', onfileselected, onjoinlink } = $props();
+
+    let autoDropFreeze = $state(getAutoDropFreeze());
+    function toggleAutoDropFreeze(e) {
+        autoDropFreeze = e.target.checked;
+        setAutoDropFreeze(autoDropFreeze);
+    }
 
     let langTick = $state(0);
     $effect(() => {
@@ -65,6 +71,14 @@
         <input type="file" onchange={(e) => handleFiles(e.target.files)} />
         <span class="drop-icon">+</span>
         <span class="drop-text">{tt('sendFile')}</span>
+    </label>
+
+    <label class="option">
+        <input type="checkbox" checked={autoDropFreeze} onchange={toggleAutoDropFreeze} />
+        <span class="option-text">
+            {tt('autoDropFreeze')}
+            <span class="option-hint">{tt('autoDropFreezeHint')}</span>
+        </span>
     </label>
 
     <div class="divider"></div>
@@ -151,6 +165,35 @@
     .drop-text {
         color: #999;
         font-size: 0.9rem;
+    }
+
+    .option {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        margin: 1rem 0 0 0;
+        padding: 0.25rem 0.5rem;
+        text-align: left;
+        cursor: pointer;
+        color: #bbb;
+        font-size: 0.85rem;
+    }
+
+    .option input[type="checkbox"] {
+        margin-top: 0.15rem;
+        accent-color: #e94560;
+        cursor: pointer;
+    }
+
+    .option-text {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .option-hint {
+        color: #777;
+        font-size: 0.75rem;
+        margin-top: 0.15rem;
     }
 
     .divider {

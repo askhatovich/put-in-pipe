@@ -60,6 +60,11 @@ function createSocket(url, resolve, reject) {
         }
         try {
             const msg = JSON.parse(ev.data);
+            // Events with an "id" field require explicit ACK so the server
+            // can close the WS only after delivery confirmation.
+            if (typeof msg.id === 'number' && socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ action: 'ack', data: { id: msg.id } }));
+            }
             if (msg.event) {
                 dispatch(msg.event, msg);
             }
