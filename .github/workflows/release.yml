@@ -222,6 +222,18 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           ARCH="$(uname -m)"
 
+          # RPM's Version field doesn't allow '-'. Move the pre-release
+          # suffix into Release following Fedora packaging guidelines:
+          # Release "0.<suffix>" sorts below the eventual "1" release.
+          if [[ "$VERSION" == *-* ]]; then
+              RPM_VERSION="${VERSION%%-*}"
+              RPM_PRERELEASE="${VERSION#*-}"
+              RPM_RELEASE="0.${RPM_PRERELEASE}%{?dist}"
+          else
+              RPM_VERSION="$VERSION"
+              RPM_RELEASE="1%{?dist}"
+          fi
+
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=OFF \
@@ -233,14 +245,14 @@ jobs:
           install -Dm644 contrib/config.ini.example      "$STAGE/etc/put-in-pipe/config.ini"
           install -Dm644 contrib/put-in-pipe.service     "$STAGE/usr/lib/systemd/system/put-in-pipe.service"
 
-          RPM_NAME="put-in-pipe-${VERSION}-1.${{ matrix.label }}.${ARCH}.rpm"
+          RPM_NAME="put-in-pipe-${VERSION}-${{ matrix.label }}.${ARCH}.rpm"
 
           # Build RPM with fpm-like approach using rpmbuild
           mkdir -p ~/rpmbuild/{SPECS,BUILD,RPMS,SOURCES,SRPMS}
           cat > ~/rpmbuild/SPECS/put-in-pipe.spec <<SPEC
           Name:    put-in-pipe
-          Version: $VERSION
-          Release: 1%{?dist}
+          Version: $RPM_VERSION
+          Release: $RPM_RELEASE
           Summary: Privacy-preserving streaming file transfer server
           License: GPL-3.0-or-later
           URL:     https://github.com/askhatovich/put-in-pipe
