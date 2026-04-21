@@ -42,6 +42,7 @@ const translations = {
         kicked: "You were removed from the session",
         autoDropFreeze: "Start transfer automatically when a receiver connects",
         autoDropFreezeHint: "Drops the initial wait as soon as the first chunk is picked up",
+        incomplete: "Transfer incomplete — some chunks were lost",
     },
     ru: {
         sendFile: "Отправить файл",
@@ -86,6 +87,7 @@ const translations = {
         kicked: "Вы были удалены из сессии",
         autoDropFreeze: "Начать передачу автоматически, когда подключится получатель",
         autoDropFreezeHint: "Снимает стартовое ожидание, как только первый чанк будет получен",
+        incomplete: "Передача не завершена — часть чанков потеряна",
     },
 };
 

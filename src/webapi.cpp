@@ -691,12 +691,18 @@ void WebAPI::sessionChunkGet(const crow::request &req, crow::response &res)
     const auto chunk = session.first->getChunk(index, client);
     if (chunk == nullptr)
     {
+        PLOG_WARNING << "[sess=" << sessionId << "] GET chunk " << index
+                     << " -> 404 (not in buffer); client=" << client->publicId()
+                     << " currentMaxChunkIndex=" << session.first->currentMaxChunkIndex()
+                     << " someRemoved=" << session.first->someChunkWasRemoved();
         res.code = 404;
         res.body = "Chunk not found";
         res.end();
         return;
     }
 
+    PLOG_DEBUG << "[sess=" << sessionId << "] GET chunk " << index
+               << " -> 200 (" << chunk->size() << " bytes); client=" << client->publicId();
     res.code = 200;
     res.set_header("Content-Type", "application/octet-stream");
     res.body = std::string(chunk->begin(), chunk->end());
@@ -904,6 +910,9 @@ void WebAPI::wsOnMessage(crow::websocket::connection &conn, const std::string &d
         }
         if (not session.first->addChunk(data))
         {
+            PLOG_WARNING << "[sess=" << joinedSessionId << "] addChunk rejected (buffer full or oversized);"
+                         << " size=" << data.size()
+                         << " currentMaxChunkIndex=" << session.first->currentMaxChunkIndex();
             conn.send_text( SerializableEvent::AddingChunkFailure{}.json() );
         }
         return;

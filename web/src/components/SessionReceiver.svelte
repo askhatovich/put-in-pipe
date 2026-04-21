@@ -26,6 +26,12 @@
     let uploadFinished = $state(sessionData?.state?.upload_finished || false);
     let errorMsg = $state('');
 
+    // Track chunks that are mid-flight (HTTP GET in progress) and chunks
+    // that gave up after all retries. Used by the strict completion check
+    // to avoid silently assembling a file with holes.
+    let pendingFetches = $state(new Set());
+    let failedChunks = $state(new Set());
+
     // --- File System Access API (disk-based storage) ---
     const hasFSAccess = typeof globalThis.showSaveFilePicker === 'function';
     let fileHandle = $state(null);
@@ -173,10 +179,26 @@
         }
     }
 
+    function markFetchDone(index) {
+        pendingFetches.delete(index);
+        pendingFetches = new Set(pendingFetches);
+    }
+
+    function markFetchFailed(index, reason) {
+        console.warn(`[pip] chunk ${index} failed: ${reason}`);
+        failedChunks.add(index);
+        failedChunks = new Set(failedChunks);
+        markFetchDone(index);
+    }
+
     async function fetchAndDecryptChunk(index, retries = 3) {
         // Wait for save file dialog before downloading
         if (writableReady) await writableReady;
         if (writable ? writtenChunks.has(index) : chunks.has(index)) return;
+        if (pendingFetches.has(index)) return; // another call is already handling it
+
+        pendingFetches.add(index);
+        pendingFetches = new Set(pendingFetches);
 
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
@@ -198,17 +220,28 @@
                         sendAction('confirm_chunk', { index });
                     }
                     chunksConfirmed++;
+                    markFetchDone(index);
                     return;
                 }
-                if (result.status === 404) return; // chunk removed, skip
+                if (result.status === 404) {
+                    // Chunk removed on the server before we could fetch it.
+                    // No retry — keep as failure so the strict completion
+                    // check can surface the gap instead of a silent skip.
+                    markFetchFailed(index, `HTTP 404 (chunk gone from server)`);
+                    return;
+                }
+                console.warn(`[pip] chunk ${index} attempt ${attempt + 1} failed: HTTP ${result.status} ${result.error || ''}`);
                 await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
             } catch (err) {
+                console.warn(`[pip] chunk ${index} attempt ${attempt + 1} exception: ${err.message}`);
                 if (attempt === retries - 1) {
                     errorMsg = `Chunk ${index}: ${err.message}`;
                 }
                 await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
             }
         }
+
+        markFetchFailed(index, `exhausted ${retries} retries`);
     }
 
     async function onNewChunk(msg) {
@@ -255,11 +288,29 @@
 
     function checkIfDone() {
         if (completeHandled) return;
-        const hasData = writable ? writtenChunks.size > 0 : chunks.size > 0;
-        if (uploadFinished && hasData && noMorePendingChunks
-            && chunksAcknowledged >= chunksConfirmed) {
+        if (!uploadFinished) return;
+        if (pendingFetches.size > 0) return;
+        if (chunksAcknowledged < chunksConfirmed) return;
+
+        const have = writable ? writtenChunks.size : chunks.size;
+        const expected = highestKnownChunk;
+
+        if (expected === 0) return; // nothing uploaded yet
+        if (have + failedChunks.size < expected) return; // still waiting for new_chunk events or fetches
+
+        if (failedChunks.size === 0 && have >= expected) {
             finishWithBlob();
+            return;
         }
+
+        // All indices accounted for, but some permanently failed. Refuse to
+        // silently assemble a file with holes — report the gap instead.
+        completeHandled = true;
+        const missing = [...failedChunks].sort((a, b) => a - b);
+        console.error(`[pip] transfer incomplete, ${missing.length} chunk(s) missing:`, missing);
+        errorMsg = `Incomplete: ${missing.length} chunk(s) missing`;
+        if (writable) { writable.close().catch(() => {}); writable = null; }
+        oncomplete?.({ status: 'incomplete', missing });
     }
 
     // Track if we're still expecting chunks

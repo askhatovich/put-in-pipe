@@ -161,6 +161,10 @@ void TransferSession::removeReceiver(const std::string &publicId)
     m_buffer.removeOneFromExpectedConsumers(publicId, removedChunks);
     if (not removedChunks.empty())
     {
+        std::string idxs;
+        for (auto id : removedChunks) { if (!idxs.empty()) idxs += ','; idxs += std::to_string(id); }
+        PLOG_INFO << "[sess=" << m_id << "] removeReceiver " << publicId
+                  << " triggered sanitize of chunks [" << idxs << "]";
         Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
     }
 
@@ -264,6 +268,10 @@ bool TransferSession::addChunk(const std::string &binaryData)
         return false;
     }
 
+    PLOG_DEBUG << "[sess=" << m_id << "] addChunk -> index=" << newIndex
+               << " size=" << binaryData.size()
+               << " bufferCount=" << m_buffer.chunkCount();
+
     Event::Data::ChunkInfo info;
     info.index = newIndex;
     info.size = binaryData.size();
@@ -343,7 +351,17 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
 
     if (not removedChunks.empty())
     {
+        std::string idxs;
+        for (auto id : removedChunks) { if (!idxs.empty()) idxs += ','; idxs += std::to_string(id); }
+        PLOG_INFO << "[sess=" << m_id << "] confirm chunk " << index
+                  << " by " << client->publicId() << " -> sanitized [" << idxs
+                  << "] bufferCount=" << newCount;
         Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
+    }
+    else
+    {
+        PLOG_DEBUG << "[sess=" << m_id << "] confirm chunk " << index
+                   << " by " << client->publicId() << " (no removal, bufferCount=" << newCount << ")";
     }
 
     const auto newAllowed = m_buffer.newChunkIsAllowed();
@@ -403,7 +421,12 @@ void TransferSession::dropInitialChunksFreeze()
         return;
     }
 
-    PLOG_INFO << "Session " << m_id << ": initial freeze dropped, " << removedChunks.size() << " chunks freed";
+    {
+        std::string idxs;
+        for (auto id : removedChunks) { if (!idxs.empty()) idxs += ','; idxs += std::to_string(id); }
+        PLOG_INFO << "[sess=" << m_id << "] initial freeze dropped, " << removedChunks.size()
+                  << " chunks sanitized: [" << idxs << "]";
+    }
 
     bool shouldRemove = false;
     {
