@@ -351,11 +351,16 @@ void TransferSession::setChunkAsReceived(size_t index, std::shared_ptr<Client> c
 
     if (not removedChunks.empty())
     {
-        std::string idxs;
-        for (auto id : removedChunks) { if (!idxs.empty()) idxs += ','; idxs += std::to_string(id); }
-        PLOG_INFO << "[sess=" << m_id << "] confirm chunk " << index
-                  << " by " << client->publicId() << " -> sanitized [" << idxs
-                  << "] bufferCount=" << newCount;
+        // Per-confirm diagnostic — kept at DEBUG to avoid spamming the
+        // journal on normal high-volume transfers (one line per chunk).
+        IF_PLOG(plog::debug)
+        {
+            std::string idxs;
+            for (auto id : removedChunks) { if (!idxs.empty()) idxs += ','; idxs += std::to_string(id); }
+            PLOG_DEBUG << "[sess=" << m_id << "] confirm chunk " << index
+                       << " by " << client->publicId() << " -> sanitized [" << idxs
+                       << "] bufferCount=" << newCount;
+        }
         Publisher<Event::TransferSession>::notifySubscribers(Event::TransferSession::chunksWasRemoved, removedChunks);
     }
     else
