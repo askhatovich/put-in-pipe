@@ -353,11 +353,63 @@
     // Run init once on mount, not inside $effect to avoid re-runs on state changes
     init();
 
+    // --- Screen Wake Lock ---
+    // Mobile browsers aggressively throttle/suspend backgrounded tabs,
+    // which freezes the transfer. A Screen Wake Lock keeps the screen on
+    // (and therefore the tab foregrounded) while an upload/download is
+    // in progress. Released automatically by the browser when the page
+    // loses visibility — we reacquire it on visibilitychange.
+    let wakeLock = null;
+    const wakeLockSupported = typeof navigator !== 'undefined'
+        && typeof navigator.wakeLock !== 'undefined'
+        && typeof navigator.wakeLock.request === 'function';
+
+    async function acquireWakeLock() {
+        if (!wakeLockSupported || wakeLock) return;
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+        } catch {
+            // May throw: permission denied, low battery, not a secure context
+            wakeLock = null;
+        }
+    }
+
+    async function releaseWakeLock() {
+        if (!wakeLock) return;
+        const current = wakeLock;
+        wakeLock = null;
+        try { await current.release(); } catch { /* ignore */ }
+    }
+
+    function onVisibilityChange() {
+        if (document.visibilityState === 'visible'
+            && (screen === 'sender' || screen === 'receiver')) {
+            acquireWakeLock();
+        }
+    }
+
+    $effect(() => {
+        const active = screen === 'sender' || screen === 'receiver';
+        if (active) {
+            acquireWakeLock();
+        } else {
+            releaseWakeLock();
+        }
+    });
+
     // Cleanup on unmount
     $effect(() => {
+        if (wakeLockSupported) {
+            document.addEventListener('visibilitychange', onVisibilityChange);
+        }
         return () => {
             clearInterval(statsInterval);
             disconnect();
+            releaseWakeLock();
+            if (wakeLockSupported) {
+                document.removeEventListener('visibilitychange', onVisibilityChange);
+            }
         };
     });
 </script>

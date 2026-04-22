@@ -42,7 +42,10 @@ void WebAPI::initRoutes()
     CROW_ROUTE(m_app, "/").methods("GET"_method)
     ([](const crow::request& req, crow::response& resp) {
         static const std::string html = getIndexHtml();
-        static const std::string etag = std::to_string(std::hash<std::string>{}(html));
+        // RFC 7232 opaque-tag: entity-tag = weak? DQUOTE *etagc DQUOTE.
+        // Store and compare in its full quoted form so intermediaries
+        // that enforce the grammar don't mangle the value.
+        static const std::string etag = "\"" + std::to_string(std::hash<std::string>{}(html)) + "\"";
 
         const auto ifNoneMatch = req.get_header_value("If-None-Match");
         if (ifNoneMatch == etag)

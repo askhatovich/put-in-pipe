@@ -157,7 +157,21 @@ function detectLang() {
     return nav.startsWith('ru') ? 'ru' : 'en';
 }
 
-let currentLang = detectLang();
+const LANGUAGE_STORAGE_KEY = 'pip_language';
+
+function loadSavedLang() {
+    try {
+        const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (saved === 'ru' || saved === 'en') return saved;
+    } catch { /* localStorage unavailable */ }
+    return null;
+}
+
+function saveLang(l) {
+    try { localStorage.setItem(LANGUAGE_STORAGE_KEY, l); } catch { /* ignore */ }
+}
+
+let currentLang = loadSavedLang() || detectLang();
 const listeners = new Set();
 
 export { translations };
@@ -167,7 +181,10 @@ export function lang() {
 }
 
 export function setLang(l) {
+    if (l !== 'ru' && l !== 'en') return;
+    if (currentLang === l) return;
     currentLang = l;
+    saveLang(l);
     listeners.forEach(fn => fn());
 }
 
