@@ -124,7 +124,7 @@
             pendingRole = 'receiver';
             encryptionKey = base64urlToKey(anchor.key);
             screen = 'connecting';
-            await identifyAndProceed(userName, 'receiver');
+            await identifyAndProceed(userName, 'receiver', anchor.id);
             return;
         }
 
@@ -133,11 +133,21 @@
 
     // --- Identity ---
 
-    async function ensureIdentified(name) {
+    async function ensureIdentified(name, resumeSessionId = null) {
         const info = await getMyInfo();
         if (info.status === 200 && info.data) {
             if (info.data.id) myPublicId = info.data.id;
             if (info.data.session && info.data.session.length > 0) {
+                // Receiver reloaded the page with the same share link —
+                // cookie still valid, session id in anchor matches the
+                // one on the server. Keep the identity so the WS can
+                // reconnect into the existing session. Without this,
+                // an auto_drop_freeze session would be terminated "ok"
+                // the moment we call leave(), leaving the sender with a
+                // false success screen while the transfer was ~50% done.
+                if (resumeSessionId && info.data.session === resumeSessionId) {
+                    return true;
+                }
                 await leave();
                 return await requestNewIdentity(name);
             }
@@ -167,13 +177,13 @@
         return false;
     }
 
-    async function identifyAndProceed(name, role) {
+    async function identifyAndProceed(name, role, resumeSessionId = null) {
         errorMsg = '';
         userName = name;
         saveName(name);
         pendingRole = role;
 
-        const identified = await ensureIdentified(name);
+        const identified = await ensureIdentified(name, resumeSessionId);
         if (!identified) return;
 
         await proceedAfterIdentity();
@@ -192,7 +202,7 @@
         pendingRole = 'receiver';
         encryptionKey = base64urlToKey(key);
         screen = 'connecting';
-        await identifyAndProceed(userName, 'receiver');
+        await identifyAndProceed(userName, 'receiver', id);
     }
 
     async function handleFileSelected(file) {
