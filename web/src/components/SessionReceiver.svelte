@@ -162,21 +162,57 @@
         }
     }
 
-    // Resync after WS reconnect — fetch any chunks we missed while disconnected
+    // Any index below the lowest in-buffer index is gone on the server
+    // (sanitized) and unrecoverable. If we don't already have it
+    // locally (common after a page reload mid-transfer — chunks live
+    // only in memory or behind a FileSystemWritable handle that gets
+    // invalidated), it's lost. Mark those indices up front so the
+    // strict completion check surfaces data loss at the end instead of
+    // silently assembling a truncated file.
+    function markUnrecoverable(state) {
+        if (!state) return;
+        const serverChunks = Array.isArray(state.chunks) ? state.chunks : [];
+        const serverIndices = serverChunks.map(c => c.index);
+        const minBuf = serverIndices.length
+            ? Math.min(...serverIndices)
+            : ((state.current_chunk || 0) + 1);
+
+        let added = 0;
+        for (let i = 1; i < minBuf; i++) {
+            const haveIt = writable ? writtenChunks.has(i) : chunks.has(i);
+            if (!haveIt && !failedChunks.has(i)) {
+                failedChunks.add(i);
+                added++;
+            }
+        }
+        if (added > 0) {
+            console.warn(`[pip] ${added} chunk(s) below buffer window are unrecoverable (pre-reload data lost)`);
+            errorMsg = `Data lost: ${added} chunk(s) gone from server buffer`;
+            failedChunks = new Set(failedChunks);
+        }
+    }
+
+    // Resync after WS reconnect — fetch any chunks we missed while
+    // disconnected.
     function onReconnectInit(msg) {
         const state = msg.data?.state;
         if (!state) return;
         if (state.upload_finished) uploadFinished = true;
-        const serverChunks = state.chunks;
-        if (serverChunks && Array.isArray(serverChunks)) {
-            (async () => {
-                for (const c of serverChunks) {
-                    if (c.index > highestKnownChunk) highestKnownChunk = c.index;
-                    await fetchAndDecryptChunk(c.index);
-                }
-                checkIfDone();
-            })();
+
+        if (state.current_chunk && state.current_chunk > highestKnownChunk) {
+            highestKnownChunk = state.current_chunk;
         }
+
+        markUnrecoverable(state);
+
+        const serverChunks = Array.isArray(state.chunks) ? state.chunks : [];
+        (async () => {
+            for (const c of serverChunks) {
+                if (c.index > highestKnownChunk) highestKnownChunk = c.index;
+                await fetchAndDecryptChunk(c.index);
+            }
+            checkIfDone();
+        })();
     }
 
     function markFetchDone(index) {
@@ -286,6 +322,42 @@
         }
     }
 
+    // Enumerate every index in [1..highestKnownChunk] that we don't
+    // have locally — the authoritative source of "did we receive all
+    // the data". Called at final commit time to refuse assembling a
+    // file with invisible gaps.
+    function computeMissingIndices() {
+        if (highestKnownChunk === 0) return [];
+        const haveSet = writable ? writtenChunks : new Set(chunks.keys());
+        const missing = [];
+        for (let i = 1; i <= highestKnownChunk; i++) {
+            if (!haveSet.has(i)) missing.push(i);
+        }
+        return missing;
+    }
+
+    // Commit-or-fail. Single decision point for "we're done downloading
+    // and about to save the file". Walks [1..highestKnownChunk] and
+    // refuses to produce a file if anything is missing — regardless of
+    // whether the server says status=ok (it only knows about what's
+    // currently in its buffer; anything sanitized before our tab was
+    // respawned doesn't exist from its point of view).
+    function finalizeStrict() {
+        if (completeHandled) return;
+        const missing = computeMissingIndices();
+        if (missing.length > 0) {
+            completeHandled = true;
+            const preview = missing.slice(0, 20).join(', ');
+            const suffix = missing.length > 20 ? ', …' : '';
+            console.error(`[pip] refusing to finalize: ${missing.length} chunk(s) missing: ${preview}${suffix}`);
+            errorMsg = `Data lost: ${missing.length} chunk(s) missing`;
+            if (writable) { writable.close().catch(() => {}); writable = null; }
+            oncomplete?.({ status: 'incomplete', missing });
+            return;
+        }
+        finishWithBlob();
+    }
+
     function checkIfDone() {
         if (completeHandled) return;
         if (!uploadFinished) return;
@@ -298,19 +370,7 @@
         if (expected === 0) return; // nothing uploaded yet
         if (have + failedChunks.size < expected) return; // still waiting for new_chunk events or fetches
 
-        if (failedChunks.size === 0 && have >= expected) {
-            finishWithBlob();
-            return;
-        }
-
-        // All indices accounted for, but some permanently failed. Refuse to
-        // silently assemble a file with holes — report the gap instead.
-        completeHandled = true;
-        const missing = [...failedChunks].sort((a, b) => a - b);
-        console.error(`[pip] transfer incomplete, ${missing.length} chunk(s) missing:`, missing);
-        errorMsg = `Incomplete: ${missing.length} chunk(s) missing`;
-        if (writable) { writable.close().catch(() => {}); writable = null; }
-        oncomplete?.({ status: 'incomplete', missing });
+        finalizeStrict();
     }
 
     // Track if we're still expecting chunks
@@ -327,7 +387,11 @@
         const status = d.status || 'ok';
 
         if (status === 'ok') {
-            finishWithBlob();
+            // Run the gap check even when the server says ok. The server's
+            // "ok" only means all chunks currently in its buffer are
+            // confirmed — it doesn't know about chunks that were sanitized
+            // before our page was respawned.
+            finalizeStrict();
         } else {
             completeHandled = true;
             oncomplete?.({ status });
@@ -397,11 +461,16 @@
         };
     });
 
-    // Download chunks that already exist when we joined
+    // Download chunks that already exist when we joined.
+    // Also detect the "reload mid-transfer" case here: if start_init's
+    // state.current_chunk is ahead of our buffer window, chunks below
+    // the window have been sanitized and are permanently gone.
     let initialFetchDone = false;
     $effect(() => {
         if (initialFetchDone) return;
         initialFetchDone = true;
+
+        markUnrecoverable(sessionData?.state);
 
         const existingChunks = sessionData?.state?.chunks;
         if (existingChunks && Array.isArray(existingChunks)) {
